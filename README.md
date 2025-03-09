@@ -1,4 +1,3 @@
-# compliance_llm
 # NIST Compliance RAG Explorer
 
 This repository hosts a Retrieval-Augmented Generation (RAG) tool designed to simplify interaction with NIST 800-53 Revision 5 compliance materials. It aggregates the NIST 800-53 Rev 5 Catalog, 800-53A Rev 5 Assessment Procedures, High Baseline, and Supplemental Guidance into a searchable database, enabling users to ask detailed questions about compliance controls, such as implementation guidance, required evidence, mitigated risks, and inter-control relationships.
