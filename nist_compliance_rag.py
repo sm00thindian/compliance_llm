@@ -87,20 +87,23 @@ def parse_oscal_json(json_data):
         logging.error(f"Failed to parse OSCAL JSON: {e}")
         raise
 
-# Parse assessment procedures text with control ID association
+# Parse assessment procedures text with improved control ID association
 def parse_assessment_text(text_data):
     text = text_data.decode('utf-8')
     lines = text.splitlines()
     compliance_data = []
     current_entry = []
     current_control = None
-    control_pattern = re.compile(r'\b([A-Z]{2}-[0-9]{1,2})\b')
+    header_pattern = re.compile(r'^([A-Z]{2}-[0-9]{1,2})\s+[A-Z ,]+')  # Matches "AU-02 EVENT LOGGING"
 
     for line in lines:
-        control_match = control_pattern.search(line)
-        if control_match:
-            current_control = normalize_control_id(control_match.group(1))
-        if line.strip().startswith(('Examine:', 'Interview:', 'Test:')) or 'ASSESSMENT OBJECTIVE' in line:
+        header_match = header_pattern.match(line.strip())
+        if header_match:
+            if current_entry and current_control:
+                compliance_data.append(f"NIST 800-53A Rev 5 Assessment Objectives, {current_control}: {' '.join(current_entry).strip()}")
+            current_control = normalize_control_id(header_match.group(1))  # e.g., "AU-2"
+            current_entry = []
+        elif line.strip().startswith(('Examine:', 'Interview:', 'Test:')) or 'ASSESSMENT OBJECTIVE' in line:
             if current_entry and current_control:
                 compliance_data.append(f"NIST 800-53A Rev 5 Assessment Objectives, {current_control}: {' '.join(current_entry).strip()}")
             current_entry = [line]
@@ -109,7 +112,7 @@ def parse_assessment_text(text_data):
 
     if current_entry and current_control:
         compliance_data.append(f"NIST 800-53A Rev 5 Assessment Objectives, {current_control}: {' '.join(current_entry).strip()}")
-    
+
     logging.info(f"Loaded {len(compliance_data)} entries from NIST 800-53A Rev 5 assessment procedures.")
     return compliance_data
 
@@ -211,9 +214,8 @@ def generate_response(query, retrieved_docs, oscal_data):
     control_pattern = re.compile(r'\b([A-Z]{2}-[0-9]{1,2})\b')
     control_matches = control_pattern.findall(query.upper())
     control_ids = [normalize_control_id(ctrl) for ctrl in control_matches]
-    steps = set()  # Use set for deduplication
+    steps = set()
 
-    # Build control details dictionary
     control_details = {}
     for entry in oscal_data:
         parts = entry.split(', ', 1)
@@ -222,21 +224,17 @@ def generate_response(query, retrieved_docs, oscal_data):
         control_id = normalize_control_id(parts[1].split(': ')[0])
         control_details[control_id] = entry.split(': ', 1)[1]
 
-    # Control-specific info
     if control_ids:
         for ctrl in control_ids:
             if ctrl in control_details:
                 steps.add(f"#### What is {ctrl}?\n{control_details[ctrl]}")
 
-    # Implementation query
     if "implement" in query_lower and control_ids:
         steps.add(f"#### How to Implement {control_ids[0]}:")
         found_assessment = False
         found_guidance = False
         for doc in retrieved_docs:
-            if control_ids[0] not in doc:
-                continue
-            if "Assessment Objectives" in doc:
+            if f"NIST 800-53A Rev 5 Assessment Objectives, {control_ids[0]}:" in doc:
                 lines = doc.split(': ', 1)[1].split('. ')
                 for line in lines:
                     if "Examine:" in line:
@@ -248,7 +246,7 @@ def generate_response(query, retrieved_docs, oscal_data):
                     elif "Test:" in line:
                         steps.add(f"- Test: {line.split('Test: ')[1]}")
                         found_assessment = True
-            elif "Supplemental Guidance" in doc or "Catalog" in doc:
+            elif f"NIST 800-53 Rev 5 Supplemental Guidance, {control_ids[0]}:" in doc or f"NIST 800-53 Rev 5 Catalog, {control_ids[0]}:" in doc:
                 guidance_text = doc.split(': ', 1)[1].split(' Related Controls')[0].split(' Discussion: ')[0].strip()
                 if guidance_text:
                     steps.add(f"- Guidance: {guidance_text}")
@@ -262,42 +260,37 @@ def generate_response(query, retrieved_docs, oscal_data):
         if not found_guidance:
             steps.add("- No additional guidance retrieved; follow catalog requirements.")
 
-    # Evidence query
     elif "evidence" in query_lower and control_ids:
         steps.add(f"#### Evidence Needed for {control_ids[0]}:")
         found_evidence = False
         for doc in retrieved_docs:
-            if control_ids[0] not in doc or "Assessment Objectives" not in doc:
-                continue
-            lines = doc.split(': ', 1)[1].split('. ')
-            for line in lines:
-                if "Examine:" in line:
-                    steps.add(f"- Examine: {line.split('Examine: ')[1]}")
-                    found_evidence = True
-                elif "Interview:" in line:
-                    steps.add(f"- Interview: {line.split('Interview: ')[1]}")
-                    found_evidence = True
-                elif "Test:" in line:
-                    steps.add(f"- Test: {line.split('Test: ')[1]}")
-                    found_evidence = True
+            if f"NIST 800-53A Rev 5 Assessment Objectives, {control_ids[0]}:" in doc:
+                lines = doc.split(': ', 1)[1].split('. ')
+                for line in lines:
+                    if "Examine:" in line:
+                        steps.add(f"- Examine: {line.split('Examine: ')[1]}")
+                        found_evidence = True
+                    elif "Interview:" in line:
+                        steps.add(f"- Interview: {line.split('Interview: ')[1]}")
+                        found_evidence = True
+                    elif "Test:" in line:
+                        steps.add(f"- Test: {line.split('Test: ')[1]}")
+                        found_evidence = True
         if not found_evidence:
             steps.add("- No specific evidence requirements retrieved.")
 
-    # Risks query
     elif "risks" in query_lower and control_ids:
         steps.add(f"#### Risks Mitigated by {control_ids[0]}:")
         found_risks = False
         for doc in retrieved_docs:
-            if control_ids[0] not in doc:
-                continue
-            discussion = re.search(r'Discussion: (.*?)(?: Related Controls|$)', doc)
-            if discussion:
-                steps.add(f"- Discussion: {discussion.group(1)}")
-                found_risks = True
+            if control_ids[0] in doc:
+                discussion = re.search(r'Discussion: (.*?)(?: Related Controls|$)', doc)
+                if discussion:
+                    steps.add(f"- Discussion: {discussion.group(1)}")
+                    found_risks = True
         if not found_risks:
             steps.add("- No specific risk mitigation details retrieved.")
 
-    # Relationship query
     elif "relate" in query_lower and len(control_ids) >= 2:
         steps.add(f"#### Relationship Between {control_ids[0]} and {control_ids[1]}:")
         found_relation = False
@@ -318,11 +311,9 @@ def generate_response(query, retrieved_docs, oscal_data):
     if not steps:
         steps.add("No specific information found for your query.")
 
-    response = "\n\n".join(sorted(steps))  # Sort for consistent order
-    logging.info(f"Response generated for query: {query}")
-    return response
+    return "\n\n".join(sorted(steps))
 
-# Main demo function
+# Main demo function with increased k
 def run_demo(oscal_data, vector_store, embeddings, documents, embedder):
     print("Welcome to the Compliance RAG Demo with NIST 800-53 Rev 5 Catalog, 800-53A Rev 5 Assessment, High Baseline, and Supplemental Guidance Knowledge (Version 2.27)")
     print("Type 'help' for examples, 'exit' to quit.\n")
@@ -346,12 +337,16 @@ def run_demo(oscal_data, vector_store, embeddings, documents, embedder):
         print("\nProcessing...")
         logging.info(f"Processing query: {query}")
         query_embedding = embedder.encode([query])
-        distances, indices = vector_store.search(query_embedding, k=20)
+        distances, indices = vector_store.search(query_embedding, k=50)  # Increased to 50
         
         retrieved_docs = [documents[idx] for idx in indices[0]]
         control_ids = [normalize_control_id(ctrl) for ctrl in re.findall(r'\b([A-Z]{2}-[0-9]{1,2})\b', query.upper())]
         logging.info(f"Retrieved {len(retrieved_docs)} documents for {', '.join(control_ids) if control_ids else 'query'}")
         logging.info(f"Retrieved documents: {[doc[:100] + '...' for doc in retrieved_docs]}")
+        
+        if control_ids:
+            assessment_docs = [doc for doc in retrieved_docs if f"NIST 800-53A Rev 5 Assessment Objectives, {control_ids[0]}:" in doc]
+            logging.info(f"Found {len(assessment_docs)} assessment documents for {control_ids[0]}")
         
         response = generate_response(query, retrieved_docs, oscal_data)
         print(f"### {query}\n{response}\n")
