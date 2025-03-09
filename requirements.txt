@@ -1,0 +1,6 @@
+requests
+sentence-transformers
+faiss-cpu
+numpy
+pdfplumber
+tqdm
