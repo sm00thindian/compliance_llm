@@ -77,16 +77,16 @@ print(f"Removed temporary file {cci_zip_file}")
         subprocess.run([python_cmd, "download_cci.py"], check=True)
     except subprocess.CalledProcessError as e:
         print(f"Warning: Failed to download CCI XML: {e}")
-        print("Proceeding with fallback CCI mapping in nist_compliance_rag.py.")
+        print("Proceeding with fallback CCI mapping in main.py.")
     finally:
         if os.path.exists("download_cci.py"):
             os.remove("download_cci.py")
 
 def run_demo(selected_model):
-    """Run the nist_compliance_rag.py script with the selected model."""
+    """Run the main.py script with the selected model."""
     python_cmd = get_python_cmd()
     try:
-        subprocess.run([python_cmd, 'nist_compliance_rag.py', '--model', selected_model], check=True)
+        subprocess.run([python_cmd, 'main.py', '--model', selected_model], check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error running nist_compliance_rag.py: {e}")
         sys.exit(1)
@@ -116,7 +116,7 @@ def main():
             print("Invalid input. Please enter a number.")
     
     selected_model = models[choice - 1][0]
-    print(f"Setting up and running nist_compliance_rag.py with model: {selected_model}")
+    print(f"Setting up and running main.py with model: {selected_model}")
 
     # Setup steps
     create_virtual_env()
