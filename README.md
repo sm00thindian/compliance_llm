@@ -25,7 +25,7 @@ This repository hosts a Retrieval-Augmented Generation (RAG) tool designed to si
    ```
 
 2. **Configure the Environment**:
-   - Create a `config.ini` file with these settings:
+   - Create or verify the `config.ini` file with these settings:
      ```ini
      [DEFAULT]
      catalog_url = https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json
@@ -38,7 +38,7 @@ This repository hosts a Retrieval-Augmented Generation (RAG) tool designed to si
      ```
 
 3. **Run the Setup Script**:
-   - Use `setup_and_run_nist_demo.py` to configure a virtual environment, install dependencies, and start the demo:
+   - Use `setup_and_run_nist_demo.py` or `classic_demo.py` to configure a virtual environment, install dependencies, and start the demo:
    ```bash
    python3 setup_and_run_nist_demo.py
    ```
