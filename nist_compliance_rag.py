@@ -17,24 +17,21 @@ from tqdm import tqdm
 import xml.etree.ElementTree as ET
 import glob
 
-# Setup logging to overwrite each run, only for our script
+# Configure logging to debug.log file
 logging.basicConfig(
     filename='debug.log',
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    filemode='w'  # Overwrite instead of append
+    filemode='w'
 )
-
-# Suppress pdfminer's verbose DEBUG logging
 logging.getLogger('pdfminer').setLevel(logging.INFO)
 
 def normalize_control_id(control_id):
     """Normalize control IDs by removing leading zeros and ensuring proper format."""
-    parts = control_id.split('-')
-    if len(parts) == 2:
-        family, number = parts
-        number = str(int(number))  # Remove leading zeros
-        return f"{family}-{number}"
+    match = re.match(r'^([A-Z]{2})-0*([0-9]+)(?:\(([a-z0-9]+)\))?$', control_id)
+    if match:
+        family, number, enhancement = match.groups()
+        return f"{family}-{number}" + (f"({enhancement})" if enhancement else "")
     return control_id
 
 def fetch_json_data(url):
@@ -63,6 +60,7 @@ def extract_controls_from_json(json_data):
     """Extract controls from NIST 800-53 OSCAL JSON."""
     controls = []
     if not json_data or 'catalog' not in json_data:
+        logging.error("Invalid JSON structure: 'catalog' key missing.")
         return controls
     for group in json_data['catalog'].get('groups', []):
         for control in group.get('controls', []):
@@ -83,7 +81,9 @@ def extract_assessment_from_pdf(pdf_file):
         current_block = ""
         for page in tqdm(pdf.pages, desc="Extracting assessment procedures"):
             text = page.extract_text() or ""
-            blocks = re.split(r'(^[A-Z]{2}-[0-9]{1,2}\s+\([a-z0-9]+\))', text, flags=re.MULTILINE)
+            logging.debug(f"Page text sample: {text[:200]}")
+            blocks = re.split(r'(^[A-Z]{2}-[0-9]{1,2}(?:\s*\([a-z0-9]+\))?)', text, flags=re.MULTILINE)
+            logging.debug(f"Found {len(blocks)} blocks on page")
             for i, block in enumerate(blocks):
                 if i % 2 == 1:
                     if current_control and current_block:
@@ -92,7 +92,7 @@ def extract_assessment_from_pdf(pdf_file):
                     current_block = ""
                 elif current_control:
                     current_block += block
-        # Process the last block
+                    logging.debug(f"Block for {current_control}: {current_block[:200]}")
         if current_control and current_block:
             process_block(current_control, current_block, assessment_entries)
     logging.info(f"Parsed {len(assessment_entries)} assessment entries from NIST 800-53A Rev 5 PDF")
@@ -100,16 +100,18 @@ def extract_assessment_from_pdf(pdf_file):
 
 def process_block(control_id, block, assessment_entries):
     """Process a single control block and append to assessment_entries."""
-    examine = re.findall(r'Examine:.*?(?=Interview:|$)', block, re.DOTALL)
-    interview = re.findall(r'Interview:.*?(?=Test:|$)', block, re.DOTALL)
-    test = re.findall(r'Test:.*?(?=Examine:|$)', block, re.DOTALL)
+    examine = re.findall(r'(?:Examine|EXAMINE):.*?(?=Interview:|$)', block, re.DOTALL | re.IGNORECASE)
+    interview = re.findall(r'(?:Interview|INTERVIEW):.*?(?=Test:|$)', block, re.DOTALL | re.IGNORECASE)
+    test = re.findall(r'(?:Test|TEST):.*?(?=Examine:|$)', block, re.DOTALL | re.IGNORECASE)
     procedures = []
     for e in examine:
-        procedures.append(f"Examine: {e.strip().replace('Examine:', '').strip()}")
+        procedures.append(f"Examine: {e.strip().replace('Examine:', '', 1).replace('EXAMINE:', '', 1).strip()}")
     for i in interview:
-        procedures.append(f"Interview: {i.strip().replace('Interview:', '').strip()}")
+        procedures.append(f"Interview: {i.strip().replace('Interview:', '', 1).replace('INTERVIEW:', '', 1).strip()}")
     for t in test:
-        procedures.append(f"Test: {t.strip().replace('Test:', '').strip()}")
+        procedures.append(f"Test: {t.strip().replace('Test:', '', 1).replace('TEST:', '', 1).strip()}")
+    if not procedures and block.strip():
+        procedures.append(f"Procedure: {block.strip()}")
     if procedures:
         assessment_entries.append(f"NIST 800-53A Rev 5 Assessment Objectives, {control_id}: {' '.join(procedures)}")
 
@@ -117,6 +119,7 @@ def extract_high_baseline_controls(json_data):
     """Extract controls from NIST 800-53 High baseline JSON."""
     controls = []
     if not json_data or 'profile' not in json_data:
+        logging.error("Invalid JSON structure: 'profile' key missing.")
         return controls
     for import_ in json_data['profile'].get('imports', []):
         for include in import_.get('include-controls', []):
@@ -135,7 +138,7 @@ def extract_supplemental_guidance_from_pdf(pdf_file):
         current_block = ""
         for page in tqdm(pdf.pages, desc="Extracting supplemental guidance"):
             text = page.extract_text() or ""
-            blocks = re.split(r'(^[A-Z]{2}-[0-9]{1,2}(?:\s*\([a-z]+\))?)\s+', text, flags=re.MULTILINE)
+            blocks = re.split(r'(^[A-Z]{2}-[0-9]{1,2}(?:\s*\([a-z]+\))?)', text, flags=re.MULTILINE)
             for i, block in enumerate(blocks):
                 if i % 2 == 1:
                     if current_control and current_block:
@@ -144,7 +147,6 @@ def extract_supplemental_guidance_from_pdf(pdf_file):
                     current_block = ""
                 elif current_control:
                     current_block += block
-        # Process the last block
         if current_control and current_block:
             process_supplemental_block(current_control, current_block, supplemental_entries)
     logging.info(f"Parsed {len(supplemental_entries)} supplemental guidance entries from NIST 800-53 PDF")
@@ -157,24 +159,28 @@ def process_supplemental_block(control_id, block, supplemental_entries):
     supplemental_entries.append(f"NIST 800-53 Rev 5 Supplemental Guidance, {control_id}: {block.strip()}. Discussion: {discussion_text}")
 
 def load_cci_mapping(cci_file):
-    """Load CCI to NIST control mappings from U_CCI_List.xml."""
+    """Load CCI to NIST control mappings from U_CCI_List.xml with flexible parsing."""
     cci_to_nist = {}
     try:
         tree = ET.parse(cci_file)
         root = tree.getroot()
-        logging.debug(f"CCI XML root: {root.tag}, Attributes: {root.attrib}")
-        cci_items = root.findall('.//cci_item')
+        ns = {'ns': 'http://iase.disa.mil/cci'}
+        cci_items = root.findall('.//ns:cci_item', ns)
         logging.debug(f"Found {len(cci_items)} cci_item elements")
         for cci_item in cci_items:
             cci_id = cci_item.get('id')
-            references = cci_item.findall('.//reference')
-            for reference in references:
-                control_id = reference.get('title')
-                if control_id and control_id.startswith(('AC-', 'AU-', 'IA-', 'SC-')):
-                    cci_to_nist[cci_id] = normalize_control_id(control_id)
+            references = cci_item.findall('.//ns:reference', ns)
+            for ref in references:
+                if ref.get('title') == 'NIST SP 800-53':
+                    control_id_elem = ref.find('ns:item', ns)
+                    control_id = control_id_elem.text if control_id_elem is not None else ref.text
+                    if control_id and re.match(r'[A-Z]{2}-[0-9]+', control_id):
+                        cci_to_nist[cci_id] = normalize_control_id(control_id)
+                        break  # One mapping per CCI
         logging.info(f"Loaded {len(cci_to_nist)} CCI-to-NIST mappings from {cci_file}")
     except Exception as e:
         logging.error(f"Failed to load CCI mappings from {cci_file}: {e}")
+        # Fallback mappings for critical controls
         cci_to_nist = {
             'CCI-000196': 'IA-5',
             'CCI-000048': 'AC-7',
@@ -184,42 +190,31 @@ def load_cci_mapping(cci_file):
     return cci_to_nist
 
 def parse_stig_xccdf(xccdf_data, cci_to_nist):
-    """Parse STIG XCCDF file to extract rules and map them to NIST controls via CCI."""
+    """Parse STIG XCCDF file with namespace handling to extract rules and map them to NIST controls via CCI."""
     try:
-        preview = xccdf_data[:200].decode('utf-8', errors='replace')
-        logging.debug(f"STIG XCCDF data preview: {preview}")
-        
         root = ET.fromstring(xccdf_data)
-        if root is None:
-            raise ValueError("XML parsing returned None; data may be invalid or empty.")
+        ns = {'xccdf': 'http://checklists.nist.gov/xccdf/1.1'}
         
-        logging.debug(f"Root element: {root.tag}, Attributes: {root.attrib}")
+        # Extract title with namespace
+        title_elem = root.find('.//xccdf:title', ns)
+        title = title_elem.text if title_elem is not None and title_elem.text else "Untitled STIG"
         
-        ns = {'xccdf': root.tag.split('}')[0].strip('{')} if '}' in root.tag else {'xccdf': 'http://checklists.nist.gov/xccdf/1.1'}
-        logging.debug(f"Using namespace: {ns['xccdf']}")
+        # Derive technology from title (e.g., "Red Hat" from "Red Hat Enterprise Linux 9...")
+        technology = title.split(' ')[0] if title != "Untitled STIG" else "Unknown"
         
-        benchmark = root.find('xccdf:Benchmark', ns)
-        if benchmark is None:
-            benchmark = root.find('.//Benchmark')
-            if benchmark is None:
-                logging.debug(f"Children of root: {[child.tag for child in root]}")
-                raise ValueError("No <Benchmark> element found in XCCDF.")
+        # Extract benchmark ID and version
+        benchmark_id = root.get('id', 'Unknown')
+        version_elem = root.find('.//xccdf:version', ns)
+        version = version_elem.text if version_elem is not None else "Unknown"
         
-        title_elem = benchmark.find('xccdf:title', ns) or benchmark.find('.//title')
-        if title_elem is None or not title_elem.text:
-            raise ValueError("No <title> found in Benchmark or title is empty.")
-        
-        title = title_elem.text
-        technology = title.split(' ')[0]
         stig_recommendations = {}
-        
-        for rule in benchmark.findall('.//xccdf:Rule', ns):
+        for rule in root.findall('.//xccdf:Rule', ns):
             rule_id = rule.get('id')
-            title_elem = rule.find('xccdf:title', ns) or rule.find('.//title')
-            title_text = title_elem.text if title_elem is not None else "No title"
-            fix = rule.find('xccdf:fix', ns) or rule.find('.//fix')
-            fix_text = fix.text if fix is not None else "No fix instructions provided."
-            ccis = rule.findall('xccdf:ident[@system="http://cyber.mil/cci"]', ns) or rule.findall('.//ident[@system="http://cyber.mil/cci"]')
+            title_elem = rule.find('.//xccdf:title', ns)
+            title_text = title_elem.text if title_elem is not None and title_elem.text else "No title"
+            fix_elem = rule.find('.//xccdf:fix', ns)
+            fix_text = fix_elem.text if fix_elem is not None and fix_elem.text else "No fix instructions provided."
+            ccis = rule.findall('.//xccdf:ident[@system="http://cyber.mil/cci"]', ns)
             for cci in ccis:
                 cci_id = cci.text
                 control_id = cci_to_nist.get(cci_id)
@@ -232,10 +227,7 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
                         'fix': fix_text
                     })
         logging.info(f"Parsed STIG data for technology: {technology}, mapped to {len(stig_recommendations)} NIST controls.")
-        return stig_recommendations, technology, title
-    except ET.ParseError as e:
-        logging.error(f"XML ParseError in STIG XCCDF: {e}")
-        raise
+        return stig_recommendations, technology, title, benchmark_id, version
     except Exception as e:
         logging.error(f"Failed to parse STIG XCCDF: {e}")
         raise
@@ -248,24 +240,37 @@ def load_stig_data(stig_folder, cci_to_nist):
         try:
             with open(stig_file, 'rb') as f:
                 xccdf_data = f.read()
-            recommendations, technology, title = parse_stig_xccdf(xccdf_data, cci_to_nist)
+            recommendations, technology, title, benchmark_id, version = parse_stig_xccdf(xccdf_data, cci_to_nist)
             all_stig_recommendations[technology] = recommendations
-            available_stigs.append({'file': os.path.basename(stig_file), 'title': title, 'technology': technology})
+            available_stigs.append({
+                'file': os.path.basename(stig_file),
+                'title': title,
+                'technology': technology,
+                'benchmark_id': benchmark_id,
+                'version': version
+            })
         except Exception as e:
             logging.error(f"Failed to load STIG file '{stig_file}': {e}")
     logging.info(f"Loaded STIG recommendations for {len(all_stig_recommendations)} technologies.")
     return all_stig_recommendations, available_stigs
 
 def generate_response(query, retrieved_docs, oscal_data, all_stig_recommendations, available_stigs):
-    """Generate a response to the user's query, including STIG recommendations or STIG list if requested."""
+    """Generate a response to the user’s query with improved content and handling of control enhancements."""
     query_lower = query.lower()
     
-    if "list stigs" in query_lower or "what stigs are available" in query_lower:
-        if not available_stigs:
-            return "No STIGs loaded. Check the stig_folder in config.ini and ensure valid XCCDF files are present."
+    if "list stigs" in query_lower:
+        keyword = None
+        if "for" in query_lower:
+            parts = query_lower.split("for")
+            if len(parts) > 1:
+                keyword = parts[1].strip()
+        filtered_stigs = [stig for stig in available_stigs if not keyword or keyword.lower() in stig['technology'].lower() or keyword.lower() in stig['title'].lower()]
+        if not filtered_stigs:
+            return f"No STIGs found for '{keyword}'." if keyword else "No STIGs loaded. Check the stig_folder in config.ini and ensure valid XCCDF files are present."
         response = ["### Available STIGs"]
-        for stig in available_stigs:
-            response.append(f"- File: {stig['file']}\n  Title: {stig['title']}\n  Technology: {stig['technology']}")
+        response.append(f"{'File':<30} {'Title':<50} {'Technology':<20} {'Benchmark ID':<30} {'Version':<10}")
+        for stig in filtered_stigs:
+            response.append(f"{stig['file']:<30} {stig['title']:<50} {stig['technology']:<20} {stig['benchmark_id']:<30} {stig['version']:<10}")
         return "\n\n".join(response)
     
     control_pattern = re.compile(r'\b([A-Z]{2}-[0-9]{1,2}(?:\s*\([a-zA-Z0-9]+\))?)\b')
@@ -294,27 +299,32 @@ def generate_response(query, retrieved_docs, oscal_data, all_stig_recommendation
             found_guidance = False
             
             for doc in retrieved_docs:
-                if f"NIST 800-53A Rev 5 Assessment Objectives, {target}:" in doc:
-                    lines = doc.split(': ', 1)[1].split('. ')
-                    for line in lines:
-                        if "Examine:" in line:
-                            steps.append(f"- Examine: {line.split('Examine: ')[1]}")
-                            found_assessment = True
-                        elif "Interview:" in line:
-                            steps.append(f"- Interview: {line.split('Interview: ')[1]}")
-                            found_assessment = True
-                        elif "Test:" in line:
-                            steps.append(f"- Test: {line.split('Test: ')[1]}")
-                            found_assessment = True
-                elif f"NIST 800-53 Rev 5 Supplemental Guidance, {target}:" in doc or f"NIST 800-53 Rev 5 Catalog, {target}:" in doc:
-                    guidance_text = doc.split(': ', 1)[1].split(' Related Controls')[0].split(' Discussion: ')[0].strip()
-                    if guidance_text:
-                        steps.append(f"- Guidance: {guidance_text}")
-                        found_guidance = True
-                    discussion = re.search(r'Discussion: (.*?)(?: Related Controls|$)', doc)
-                    if discussion:
-                        steps.append(f"- Guidance: Discussion: {discussion.group(1)}")
-                        found_guidance = True
+                doc_control = re.search(r'(?:NIST 800-53A Rev 5 Assessment Objectives|NIST 800-53 Rev 5 Supplemental Guidance|NIST 800-53 Rev 5 Catalog), ([A-Z]{2}-[0-9]+(?:\([a-z0-9]+\))?)', doc)
+                if doc_control and normalize_control_id(doc_control.group(1)) == target:  # Exact match
+                    if "NIST 800-53A Rev 5 Assessment Objectives" in doc:
+                        lines = doc.split(': ', 1)[1].split('. ')
+                        for line in lines:
+                            if "Examine:" in line:
+                                steps.append(f"- Examine: {line.split('Examine: ')[1]}")
+                                found_assessment = True
+                            elif "Interview:" in line:
+                                steps.append(f"- Interview: {line.split('Interview: ')[1]}")
+                                found_assessment = True
+                            elif "Test:" in line:
+                                steps.append(f"- Test: {line.split('Test: ')[1]}")
+                                found_assessment = True
+                            elif "Procedure:" in line:
+                                steps.append(f"- Procedure: {line.split('Procedure: ')[1]}")
+                                found_assessment = True
+                    elif "NIST 800-53 Rev 5 Supplemental Guidance" in doc or "NIST 800-53 Rev 5 Catalog" in doc:
+                        guidance_text = doc.split(': ', 1)[1].split(' Related Controls')[0].split(' Discussion: ')[0].strip()
+                        if guidance_text:
+                            steps.append(f"- Guidance: {guidance_text}")
+                            found_guidance = True
+                        discussion = re.search(r'Discussion: (.*?)(?: Related Controls|$)', doc)
+                        if discussion:
+                            steps.append(f"- Guidance: Discussion: {discussion.group(1)}")
+                            found_guidance = True
             
             if not found_assessment:
                 steps.append("- No specific assessment procedures retrieved; ensure policies are tested per organizational needs.")
@@ -331,7 +341,7 @@ def generate_response(query, retrieved_docs, oscal_data, all_stig_recommendation
                     steps.append(f"- No STIG recommendations found for this control in {technology}.")
 
     if not steps:
-        steps.append("No specific information found for your query.")
+        steps.append("No specific information found for your query. Try rephrasing or check the NIST 800-53 documentation at nist.gov.")
 
     return "\n\n".join(steps)
 
@@ -357,12 +367,13 @@ def build_vector_store(documents, model_name):
     logging.info(f"Loaded pretrained SentenceTransformer: {model_name}")
     return model, index, doc_list
 
-def retrieve_documents(query, model, index, doc_list, top_k=50):
-    """Retrieve top-k relevant documents for a query."""
+def retrieve_documents(query, model, index, doc_list, top_k=100):
+    """Retrieve top-k relevant documents for a query with increased top_k."""
     query_embedding = model.encode([query])
     distances, indices = index.search(query_embedding, top_k)
     retrieved_docs = [doc_list[idx] for idx in indices[0]]
     logging.info(f"Retrieved {len(retrieved_docs)} documents for query")
+    logging.info(f"Sample retrieved docs: {[doc[:100] for doc in retrieved_docs[:5]]}")
     return retrieved_docs
 
 def main():
@@ -412,13 +423,14 @@ def main():
             print("Examples:")
             print("- How should AU-2 be implemented?")
             print("- List STIGs")
+            print("- List STIGs for Red Hat")
             print("- What is IA-5?")
             continue
         if not query:
             continue
 
         print("\nProcessing...")
-        retrieved_docs = retrieve_documents(query, model, index, doc_list)
+        retrieved_docs = retrieve_documents(query, model, index, doc_list, top_k=100)
         response = generate_response(query, retrieved_docs, oscal_data, all_stig_recommendations, available_stigs)
         print(f"\n### {query}\n{response}\n")
 
