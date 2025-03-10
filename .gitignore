@@ -11,6 +11,6 @@ U_CCI_List.xml
 assessment_cache.pdf
 data_hash.txt
 documents.pkl
-faiss_index_9b777afeb61a4a2c743392af6ead3000.pkl
 vectors.faiss
+knowledge/
 
