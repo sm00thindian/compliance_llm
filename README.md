@@ -40,7 +40,7 @@ This repository hosts a Retrieval-Augmented Generation (RAG) tool designed to si
 3. **Run the Setup Script**:
    - Use `setup_and_run_nist_demo.py` or `classic_demo.py` to configure a virtual environment, install dependencies, and start the demo:
    ```bash
-   python3 setup_and_run_nist_demo.py
+   python3 classic_demo.py
    ```
    - Select a model when prompted (e.g., `2` for `all-mpnet-base-v2`).
 
