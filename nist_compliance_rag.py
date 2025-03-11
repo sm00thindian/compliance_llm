@@ -16,6 +16,10 @@ import pickle
 from tqdm import tqdm
 import xml.etree.ElementTree as ET
 import glob
+from colorama import init, Fore, Style
+
+# Initialize colorama for cross-platform colored terminal output
+init()
 
 # Ensure the 'knowledge' sub-folder exists
 KNOWLEDGE_DIR = 'knowledge'
@@ -71,12 +75,12 @@ def extract_controls_from_excel(excel_file):
     controls = []
     df = pd.read_excel(excel_file, sheet_name='SP 800-53 Revision 5', header=None, skiprows=1)
     for _, row in df.iterrows():
-        control_id = str(row[0]).upper()  # Column 0: Control Identifier
+        control_id = str(row[0]).upper()
         if not re.match(r'[A-Z]{2}-[0-9]+', control_id):
             continue
-        title = str(row[1])  # Column 1: Title
-        description = str(row[2])  # Column 2: Description
-        related_controls = str(row[4]).split(', ') if pd.notna(row[4]) else []  # Column 4: Related Controls
+        title = str(row[1])
+        description = str(row[2])
+        related_controls = str(row[4]).split(', ') if pd.notna(row[4]) else []
         related_controls = [normalize_control_id(ctrl.upper()) for ctrl in related_controls if ctrl.strip()]
         controls.append({
             'control_id': control_id,
@@ -137,14 +141,14 @@ def load_cci_mapping(cci_file):
             cci_id = cci_item.get('id')
             for ref in cci_item.findall('.//ns:reference', ns):
                 if ref.get('title') == 'NIST SP 800-53':
-                    control_id = ref.get('index')  # Use 'index' attribute
+                    control_id = ref.get('index')
                     if control_id and re.match(r'[A-Z]{2}-[0-9]+', control_id.split()[0]):
                         cci_to_nist[cci_id] = normalize_control_id(control_id.split()[0])
                         break
         logging.info(f"Loaded {len(cci_to_nist)} CCI-to-NIST mappings from {cci_file}")
     except Exception as e:
         logging.error(f"CCI mapping failed: {e}")
-        cci_to_nist = {'CCI-000196': 'IA-5', 'CCI-000048': 'AC-7', 'CCI-002450': 'SC-13'}  # Fallback
+        cci_to_nist = {'CCI-000196': 'IA-5', 'CCI-000048': 'AC-7', 'CCI-002450': 'SC-13'}
         logging.info(f"Using fallback CCI-to-NIST mapping with {len(cci_to_nist)} entries.")
     return cci_to_nist
 
@@ -152,17 +156,24 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
     """Parse STIG XCCDF file to extract rules and map to NIST controls via CCI."""
     try:
         root = ET.fromstring(xccdf_data)
-        ns = {'xccdf': root.tag.split('}')[0][1:]}  # Dynamically get namespace from root
+        ns = {'xccdf': root.tag.split('}')[0][1:]}
         logging.info(f"Using namespace: {ns['xccdf']}")
         
         title_elem = root.find('.//xccdf:title', ns)
         title = title_elem.text if title_elem is not None else "Untitled STIG"
-        technology = title.split(' ')[0] if title != "Untitled STIG" else "Unknown"
+        
+        title_lower = title.lower()
+        if "windows 10" in title_lower:
+            technology = "Windows 10"
+        elif "red hat enterprise linux 9" in title_lower:
+            technology = "Red Hat 9"
+        else:
+            technology = title.split(' ')[0]
+        
         benchmark_id = root.get('id', 'Unknown')
         version_elem = root.find('.//xccdf:version', ns)
         version = version_elem.text if version_elem is not None else "Unknown"
         
-        # Build a dictionary of fixtext elements by fix-id
         fixtexts = {fix.get('fixref'): fix.text for fix in root.findall('.//xccdf:fixtext', ns) if fix.text}
         
         stig_recommendations = {}
@@ -177,7 +188,6 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
             fix_ref = fix_elem.get('id') if fix_elem is not None else None
             fix_text = fixtexts.get(fix_ref, "No fix instructions provided.") if fix_ref else "No fix instructions provided."
             
-            # Collect all CCI IDs for this rule
             ccis = rule.findall('.//xccdf:ident[@system="http://cyber.mil/cci"]', ns)
             for cci in ccis:
                 cci_id = cci.text
@@ -185,7 +195,6 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
                 if control_id:
                     if control_id not in stig_recommendations:
                         stig_recommendations[control_id] = []
-                    # Check if this rule_id already exists for this control_id
                     if not any(rec['rule_id'] == rule_id for rec in stig_recommendations[control_id]):
                         stig_recommendations[control_id].append({
                             'rule_id': rule_id,
@@ -231,6 +240,12 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
     query_lower = query.lower()
     response = []
 
+    # Quick summary intro with color
+    if "list stigs" not in query_lower:
+        response.append(f"{Fore.YELLOW}**Answering:** '{query}'{Style.RESET_ALL}")
+        response.append(f"Here’s what I found based on NIST 800-53 and available STIGs:\n")
+
+    # Handle "list stigs" query
     if "list stigs" in query_lower:
         keyword = query_lower.split("for")[1].strip() if "for" in query_lower else None
         filtered_stigs = [
@@ -240,52 +255,55 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
         if not filtered_stigs:
             return f"No STIGs found{' for ' + keyword if keyword else ''}. Please check the `stig_folder` in `config.ini`."
         
-        response.append("### Available STIGs")
-        response.append("Here’s a list of available STIGs loaded in the system:")
-        response.append(f"{'**File**':<30} {'**Title**':<50} {'**Technology**':<20} {'**Version**':<10}")
+        response.append(f"{Fore.CYAN}### Available STIGs{Style.RESET_ALL}")
+        response.append("Here’s a list of STIGs loaded in the system:\n")
+        response.append("+------------------------------------+----------------------+--------------+---------+")
+        response.append("| File Name                          | Title                | Technology   | Version |")
+        response.append("+------------------------------------+----------------------+--------------+---------+")
         for stig in filtered_stigs:
-            response.append(f"{stig['file']:<30} {stig['title']:<50} {stig['technology']:<20} {stig['version']:<10}")
-        return "\n\n".join(response)
+            short_title = stig['technology'] + " STIG"
+            response.append(f"| {stig['file']:<34} | {short_title:<20} | {stig['technology']:<12} | {stig['version']:<7} |")
+            response.append("+------------------------------------+----------------------+--------------+---------+")
+        return "\n".join(response)
 
+    # Parse control IDs and system type from query
     control_pattern = re.compile(r'\b([A-Z]{2}-[0-9]{1,2}(?:\s*\([a-zA-Z0-9]+\))?)\b')
     control_ids = [match.replace(' ', '') for match in control_pattern.findall(query.upper())]
     system_match = re.search(r'for\s+([Windows|Linux|Red Hat|Ubuntu|macOS|Cisco].*?)(?:\s|$)', query, re.IGNORECASE)
     system_type = system_match.group(1).strip().rstrip('?') if system_match else None
 
     if control_ids:
-        intro = f"This response covers the NIST 800-53 control(s): **{', '.join(control_ids)}**."
-        if system_type:
-            intro += f" It includes implementation guidance for **{system_type}** where available."
-        response.append(f"**{intro}**")
-        response.append("Below, you’ll find detailed information and practical guidance.")
+        response.append(f"{Fore.YELLOW}**Controls Covered:** {', '.join(control_ids)}{Style.RESET_ALL}" + (f" for {system_type}" if system_type else ""))
     else:
-        response.append("**No NIST controls detected in your query.**")
-        response.append("Please include a control ID (e.g., 'AU-3') or rephrase your question.")
+        response.append(f"{Fore.RED}**No NIST controls detected.**{Style.RESET_ALL} Try including a control ID like 'AU-3'.")
+        return "\n\n".join(response)
 
+    # NIST control details
     for control_id in control_ids:
         if control_id in control_details:
             ctrl = control_details[control_id]
-            response.append(f"### Control: {control_id}")
+            response.append(f"{Fore.CYAN}### Control: {Fore.YELLOW}{control_id}{Style.RESET_ALL}")
             response.append(f"- **Title:** {ctrl['title']}")
             response.append(f"- **Description:** {ctrl['description']}")
             response.append(f"- **Parameters:** {', '.join(ctrl['parameters']) if ctrl['parameters'] else 'None specified'}")
             response.append(f"- **Related Controls:** {', '.join(ctrl['related_controls']) if ctrl['related_controls'] else 'None'}")
             if control_id in high_baseline_controls:
-                response.append("- **Baseline:** Included in the High baseline")
-            response.append("\n**Learn More:** [NIST 800-53 Catalog](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf)")
+                response.append(f"- **Baseline:** Included in the High baseline")
+            response.append(f"\n**Learn More:** [NIST 800-53 Catalog](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf)")
         else:
-            response.append(f"### Control: {control_id}")
+            response.append(f"{Fore.CYAN}### Control: {Fore.YELLOW}{control_id}{Style.RESET_ALL}")
             response.append(f"- **Status:** Not found in the catalog.")
 
+    # STIG implementation guidance
     if "implement" in query_lower and control_ids:
         for control_id in control_ids:
-            response.append(f"### Implementation Guidance for {control_id}" + (f" on {system_type}" if system_type else ""))
+            response.append(f"{Fore.CYAN}### Implementation Guidance for {Fore.YELLOW}{control_id}{Style.RESET_ALL}" + (f" on {system_type}" if system_type else ""))
             guidance = [doc.split(': ', 1)[1] for doc in retrieved_docs if control_id in doc]
-            response.append("#### NIST Guidance")
+            response.append(f"{Fore.CYAN}#### NIST Guidance{Style.RESET_ALL}")
             if guidance:
                 response.extend(f"- {g}" for g in guidance)
             else:
-                response.append("- No specific NIST guidance found. Check the control’s description for general requirements.")
+                response.append("- No specific NIST guidance found. Check the control’s description.")
 
             stig_found = False
             for tech, recs in all_stig_recommendations.items():
@@ -295,19 +313,34 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
                     if system_lower not in tech_lower and 'windows' not in tech_lower and 'microsoft' not in tech_lower:
                         continue
                 if control_id in recs:
-                    response.append(f"#### STIG Recommendations for {tech}")
+                    response.append(f"{Fore.CYAN}#### STIG Recommendations for {tech}{Style.RESET_ALL}")
                     for rec in recs[control_id]:
-                        response.append(f"- **Rule {rec['rule_id']}**: {rec['title']}")
-                        response.append(f"  - **Fix:** {rec['fix']}")
-                    response.append("\n**More Info:** [DISA STIGs](https://public.cyber.mil/stigs/downloads/)")
+                        short_title = rec['title'].split(' - ')[0][:50] + "..." if len(rec['title']) > 50 else rec['title']
+                        response.append(f"- **{Fore.YELLOW}{short_title}{Style.RESET_ALL}** (Rule {rec['rule_id']})")
+                        
+                        fix_lines = rec['fix'].split('. ')
+                        if len(fix_lines) > 1 and len(rec['fix']) > 100:
+                            response.append(f"  - {Fore.GREEN}**Steps to Fix:**{Style.RESET_ALL}")
+                            response.extend(f"    - {line.strip()}." for line in fix_lines if line.strip())
+                        else:
+                            response.append(f"  - {Fore.GREEN}**Fix:**{Style.RESET_ALL} {rec['fix']}")
+                        
+                        family = control_id.split('-')[0]
+                        why = {
+                            'AU': 'Ensures actions are tracked for accountability.',
+                            'IA': 'Protects against unauthorized access.',
+                            'SC': 'Secures system communications.'
+                        }.get(family, 'Improves system security.')
+                        response.append(f"  - {Fore.MAGENTA}**Why:**{Style.RESET_ALL} {why}")
+                    response.append(f"\n**More Info:** [DISA STIGs](https://public.cyber.mil/stigs/downloads/)")
                     stig_found = True
             if not stig_found:
-                response.append(f"#### STIG Recommendations")
+                response.append(f"{Fore.CYAN}#### STIG Recommendations{Style.RESET_ALL}")
                 response.append(f"- No STIGs found for this control{' on ' + system_type if system_type else ''}. Try the DISA STIG website.")
 
-    if len(response) <= 1:
-        response.append("**No detailed information available.**")
-        response.append("Try rephrasing your query or visit [nist.gov](https://www.nist.gov) for more resources.")
+    if len(response) <= 2:  # Only summary lines
+        response.append(f"{Fore.RED}**No detailed information available.**{Style.RESET_ALL}")
+        response.append(f"Try rephrasing your query or visit [nist.gov](https://www.nist.gov).")
 
     return "\n\n".join(response)
 
@@ -320,7 +353,7 @@ def build_vector_store(documents, model_name):
     if os.path.exists(index_file):
         with open(index_file, 'rb') as f:
             index, doc_list = pickle.load(f)
-        logging.info(f"Loaded existing directional vector FAISS index from {index_file}")
+        logging.info(f"Loaded existing FAISS index from {index_file}")
     else:
         embeddings = model.encode(documents, show_progress_bar=True)
         dimension = embeddings.shape[1]
@@ -351,25 +384,25 @@ def main():
     nist_800_53_xls_url = config.get('DEFAULT', 'nist_800_53_xls_url')
     excel_local_path = os.path.join(KNOWLEDGE_DIR, 'sp800-53r5-control-catalog.xlsx')
 
-    print("Fetching NIST SP 800-53 Rev 5 catalog Excel data...")
+    print(f"{Fore.CYAN}Fetching NIST SP 800-53 Rev 5 catalog Excel data...{Style.RESET_ALL}")
     catalog_excel = fetch_excel_data(nist_800_53_xls_url, excel_local_path)
     catalog_data = extract_controls_from_excel(catalog_excel) if catalog_excel else []
 
-    print("Fetching NIST SP 800-53 Rev 5 High baseline JSON data...")
+    print(f"{Fore.CYAN}Fetching NIST SP 800-53 Rev 5 High baseline JSON data...{Style.RESET_ALL}")
     high_baseline_json = fetch_json_data(config.get('DEFAULT', 'high_baseline_url'))
     high_baseline_data = extract_high_baseline_controls(high_baseline_json) if high_baseline_json else []
 
     all_documents = [f"NIST 800-53 Rev 5 Catalog, {ctrl['control_id']}: {ctrl['title']} {ctrl['description']}" for ctrl in catalog_data] + high_baseline_data
 
-    print("Building new vector store (this may takes a moment)...")
+    print(f"{Fore.CYAN}Building new vector store (this may take a moment)...{Style.RESET_ALL}")
     model, index, doc_list = build_vector_store(all_documents, args.model)
 
-    print("Loading CCI-to-NIST mapping...")
+    print(f"{Fore.CYAN}Loading CCI-to-NIST mapping...{Style.RESET_ALL}")
     cci_to_nist = load_cci_mapping('U_CCI_List.xml')
     print(f"CCI mappings loaded: {len(cci_to_nist)}")
     print("Sample CCI mappings:", list(cci_to_nist.items())[:5])
 
-    print(f"Loading STIG data from folder: {stig_folder}")
+    print(f"{Fore.CYAN}Loading STIG data from folder: {stig_folder}{Style.RESET_ALL}")
     all_stig_recommendations, available_stigs = load_stig_data(stig_folder, cci_to_nist)
     print(f"Available STIGs: {len(available_stigs)}")
     print("Sample STIGs:", available_stigs[:2])
@@ -377,11 +410,11 @@ def main():
     control_details = {ctrl['control_id']: ctrl for ctrl in catalog_data}
     high_baseline_controls = {normalize_control_id(entry.split(', ')[1].split(': ')[0]) for entry in high_baseline_data}
 
-    print("Welcome to the Compliance RAG Demo with NIST 800-53 Rev 5 Catalog and STIG Knowledge")
+    print(f"{Fore.GREEN}Welcome to the Compliance RAG Demo with NIST 800-53 Rev 5 Catalog and STIG Knowledge{Style.RESET_ALL}")
     print("Type 'help' for examples, 'list stigs' to see available STIGs, 'exit' to quit.\n")
 
     while True:
-        query = input("Enter your compliance question (e.g., 'How should AU-3 be implemented for Windows?'): ").strip()
+        query = input(f"{Fore.YELLOW}Enter your compliance question (e.g., 'How should AU-3 be implemented for Windows?'): {Style.RESET_ALL}").strip()
         if query.lower() == 'exit':
             break
         if query.lower() == 'help':
@@ -394,10 +427,10 @@ def main():
         if not query:
             continue
 
-        print("\nProcessing...")
+        print(f"\n{Fore.CYAN}Processing...{Style.RESET_ALL}")
         retrieved_docs = retrieve_documents(query, model, index, doc_list, top_k=100)
         response = generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs)
-        print(f"\n### Response to '{query}'\n{response}\n")
+        print(f"\n{Fore.CYAN}### Response to '{query}'{Style.RESET_ALL}\n{response}\n")
 
 if __name__ == "__main__":
     main()
