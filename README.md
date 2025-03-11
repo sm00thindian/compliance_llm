@@ -1,93 +1,361 @@
+### Updated `README.md`
+
+```markdown
 # NIST Compliance RAG Explorer
 
-This repository hosts a Retrieval-Augmented Generation (RAG) tool designed to simplify interaction with NIST 800-53 Revision 5 compliance materials. It aggregates the NIST 800-53 Rev 5 Catalog, 800-53A Rev 5 Assessment Procedures, High Baseline, and Supplemental Guidance into a searchable database, enabling users to ask detailed questions about compliance controls, such as implementation guidance, required evidence, mitigated risks, and inter-control relationships.
+The NIST Compliance RAG Explorer is a Python-based tool that leverages Retrieval-Augmented Generation (RAG) to provide detailed responses to compliance queries related to NIST 800-53 Revision 5 controls and Security Technical Implementation Guides (STIGs). It fetches and processes NIST 800-53 catalog data, high baseline controls, and STIG recommendations, enabling users to query implementation guidance or assessment steps for specific controls across various systems (e.g., Windows, Red Hat).
 
-## Highlights
-- Pulls and caches NIST 800-53 Rev 5 data from official sources.
-- Employs SentenceTransformers to create a vector store for fast document retrieval.
-- Handles queries like:
-  - "How should AU-2 be implemented?"
-  - "What evidence is needed for CA-7?"
-  - "What risks does AC-1 mitigate?"
-  - "How does SI-4 relate to SI-7?"
-- Offers an interactive CLI with configurable model options.
+## Features
+- **Control Details**: Retrieve titles, descriptions, parameters, and related controls from NIST 800-53 Rev 5.
+- **Implementation Guidance**: Get NIST and STIG-based recommendations for implementing controls on specific systems.
+- **Assessment Support**: Generate steps to assess compliance with NIST controls, enriched with STIG checks when available.
+- **Interactive CLI**: Query via a command-line interface with colored output for readability.
+- **Vector Store**: Uses FAISS and Sentence Transformers for efficient document retrieval.
 
-## Requirements
-- Python 3.8 or higher
-- Git (to clone the repo)
-- Internet access (for initial data download)
+## Prerequisites
+- **macOS** with Homebrew installed (for Python 3.12).
+- **Internet Connection**: To fetch NIST data and STIG files.
+- **Git**: To clone and manage the repository.
 
 ## Installation
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/sm00thindian/nist-compliance-rag-explorer.git
-   cd nist-compliance-rag-explorer
-   ```
 
-2. **Configure the Environment**:
-   - Create or verify the `config.ini` file with these settings:
-     ```ini
-     [DEFAULT]
-     catalog_url = https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json
-     assessment_url = https://csrc.nist.gov/files/pubs/sp/800/53/a/r5/final/docs/sp800-53ar5-assessment-procedures.txt
-     high_baseline_url = https://raw.githubusercontent.com/usnistgov/oscal-content/refs/heads/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_HIGH-baseline-resolved-profile_catalog.json
-     nist_800_53_pdf_url = https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf
-     vector_file = vector_store_all_controls.faiss
-     docs_file = documents_all_controls.pkl
-     hash_file = data_hash_all_controls.txt
-     ```
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/sm00thindian/nist-compliance-rag-explorer.git
+cd nist-compliance-rag-explorer
+```
 
-3. **Run the Setup Script**:
-   - Use `setup_and_run_nist_demo.py` or `classic_demo.py` to configure a virtual environment, install dependencies, and start the demo:
-   ```bash
-   python3 classic_demo.py
-   ```
-   - Select a model when prompted (e.g., `2` for `all-mpnet-base-v2`).
+### Step 2: Install Python 3.12
+This project requires Python 3.12 due to compatibility issues with `spacy` and `thinc` on Python 3.13+. Install it via Homebrew:
+
+```bash
+brew install python@3.12
+```
+
+Verify the installation:
+```bash
+/opt/homebrew/bin/python3.12 --version  # Should show Python 3.12.x
+```
+
+### Step 3: Set Up the Environment and Run the Demo
+Run the setup script (`classic_demo.py`) to create a virtual environment, install dependencies, and download required data:
+
+```bash
+/opt/homebrew/bin/python3.12 classic_demo.py
+```
+
+This script will:
+1. Create a virtual environment (`venv`) using Python 3.12.
+2. Install dependencies from `requirements.txt` (including `spacy==3.7.2` and the `en_core_web_sm` model).
+3. Download the CCI XML mapping file (`U_CCI_List.xml`).
+4. Prompt you to select a Sentence Transformer model (e.g., `all-mpnet-base-v2`).
+5. Launch the interactive demo (`nist_compliance_rag.py`).
+
+If you prefer using your system’s default Python (e.g., 3.13), you can run:
+```bash
+python classic_demo.py
+```
+The script enforces Python 3.12 for the virtual environment regardless of the invoking Python version.
+
+### Configuration
+- **config.ini**: Customize data sources (optional). Defaults:
+  - `stig_folder = ./stigs`
+  - `nist_800_53_xls_url` and `high_baseline_url` must be set to valid URLs (e.g., NIST’s official sources).
+- **STIG Files**: Place XCCDF XML files in the `stigs/` directory for STIG parsing.
+
+Example `config.ini`:
+```ini
+[DEFAULT]
+stig_folder = ./stigs
+nist_800_53_xls_url = https://csrc.nist.gov/files/p/pubs/sp800-53r5/final/docs/sp800-53r5-control-catalog.xlsx
+high_baseline_url = https://raw.githubusercontent.com/usnistgov/oscal-content/master/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_HIGH-baseline_profile.json
+```
+
+## Usage
+After setup, the CLI starts automatically. Enter queries like:
+- **General Info**: `What is AC-7?`
+- **Implementation**: `How should IA-5 be implemented for Windows?`
+- **Assessment**: `How do I assess AU-3?`
+- **List STIGs**: `List STIGs` or `List STIGs for Red Hat`
+- **Exit**: `exit`
+- **Help**: `help` for examples
+
+Example output for `How do I assess AU-3?`:
+```
+### Response to 'How do I assess AU-3?'
+**Answering:** 'How do I assess AU-3?'
+Here’s what I found based on NIST 800-53 and available STIGs:
+
+**Controls Covered:** AU-3
+
+### Control: AU-3
+- **Title:** Content of Audit Records
+- **Description:** The information system generates audit records containing information that establishes what type of event occurred, when it occurred, where it occurred, the source of the event, the outcome of the event, and the identity of any individuals or subjects associated with the event.
+
+#### How to Assess AU-3
+- **Steps to Verify:**
+  - Confirm that the information system generates audit records containing information that establishes what type of event occurred, when it occurred, where it occurred, the source of the event, the outcome of the event, and the identity of any individuals or subjects associated with the event.
+  - No specific parameters to check.
+- No STIG assessment guidance found.
+
+**More Info:** [NIST 800-53 Assessment Procedures](https://csrc.nist.gov/projects/risk-management/sp800-53-controls/assessment-procedures)
+```
 
 ## Dependencies
-Specified in `requirements.txt`:
-- `requests`
-- `sentence-transformers`
-- `faiss-cpu`
-- `numpy`
-- `pdfplumber`
-- `tqdm`
-
-The setup script installs these automatically.
-
-## How to Use
-1. Once installed, the demo launches with:
-   ```
-   Welcome to the Compliance RAG Demo with NIST 800-53 Rev 5 Catalog, 800-53A Rev 5 Assessment, High Baseline, and Supplemental Guidance Knowledge (Version 2.27)
-   Type 'help' for examples, 'exit' to quit.
-   ```
-2. Input a compliance-related question (e.g., "What risks does AC-3 mitigate?").
-3. Review the response, which may include control details, implementation steps, evidence needs, risk info, or control relationships.
-4. Type `exit` to close the demo.
+Listed in `requirements.txt`:
+```
+requests
+sentence-transformers
+faiss-cpu
+numpy
+pdfplumber
+tqdm
+pandas
+openpyxl
+colorama
+spacy==3.7.2
+```
 
 ## Project Structure
-- `nist_compliance_rag.py`: Main script for data processing, vector store creation, and query handling.
-- `setup_and_run_nist_demo.py`: Automates environment setup and demo execution.
-- `config.ini`: Defines NIST data sources and file paths.
-- `requirements.txt`: Python package dependencies.
-- `debug.log`: Runtime log file (regenerated each run).
-
-## Available Models
-Select one of these SentenceTransformer models during setup:
-1. `all-MiniLM-L12-v2`: Quick and light, ideal for testing.
-2. `all-mpnet-base-v2`: Well-rounded, recommended default.
-3. `multi-qa-MiniLM-L6-cos-v1`: Tailored for Q&A, fast but less nuanced.
-4. `all-distilroberta-v1`: Accurate, moderately paced.
-5. `paraphrase-MiniLM-L6-v2`: Lightweight, great for rephrasing.
-6. `all-roberta-large-v1`: Top accuracy, resource-heavy.
+```
+nist-compliance-rag-explorer/
+├── classic_demo.py       # Setup script
+├── nist_compliance_rag.py # Main program
+├── requirements.txt      # Dependencies
+├── config.ini            # Configuration (optional)
+├── stigs/                # STIG XML files (user-provided)
+├── knowledge/            # Generated data (e.g., FAISS index, logs)
+├── README.md             # This file
+└── LICENSE               # Apache 2.0 License
+```
 
 ## Troubleshooting
-- **Data Fetch Issues**: Verify `config.ini` URLs are valid and reachable.
-- **Sparse Responses**: Inspect `debug.log` for retrieved documents; consider increasing retrieval limit in `nist_compliance_rag.py`.
-- **Setup Errors**: Ensure Python version compatibility and dependency installation success.
+- **Python Version Error**: If `/opt/homebrew/bin/python3.12` isn’t found, install it with `brew install python@3.12`.
+- **STIGs Not Found**: Ensure `stigs/` contains valid XCCDF XML files and matches `stig_folder` in `config.ini`.
+- **Network Issues**: Verify internet connectivity for fetching NIST data and CCI XML.
 
 ## Contributing
-Contributions are welcome! Open issues or submit pull requests to enhance features, fix bugs, or optimize performance.
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/your-feature`).
+3. Commit changes (`git commit -m "Add your feature"`).
+4. Push to your fork (`git push origin feature/your-feature`).
+5. Open a pull request.
 
 ## License
-This project is licensed under the Apache License 2.0. See the `LICENSE` file for details.
+This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+- NIST for providing the 800-53 catalog and baseline data.
+- DISA for STIG resources.
+- Sentence Transformers and FAISS for RAG capabilities.
+```
+
+---
+
+### Apache 2.0 `LICENSE` File
+Here’s the standard Apache 2.0 License text with your username added as the copyright holder:
+
+#### `LICENSE`
+```
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" file, then any Derivative Works
+          that You distribute must include a readable copy of the
+          attribution notices contained within such NOTICE file, excluding
+          those notices that do not pertain to any part of the Derivative
+          Works, in at least one of the following places: within a NOTICE
+          text file distributed as part of the Derivative Works; within
+          the Source form or documentation, if provided along with the
+          Derivative Works; or, within a display generated by the
+          Derivative Works, if and wherever such third-party notices
+          normally appear. The contents of the NOTICE file are for
+          informational purposes only and do not modify the License. You
+          may add Your own attribution notices within Derivative Works
+          that You distribute, alongside or as an addendum to the NOTICE
+          text from the Work, provided that such additional attribution
+          notices cannot be construed as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright 2025 sm00thindian
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+```
+---
