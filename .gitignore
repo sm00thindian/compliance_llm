@@ -13,5 +13,6 @@ data_hash.txt
 documents.pkl
 vectors.faiss
 knowledge/
+venv/
 config.ini
 
