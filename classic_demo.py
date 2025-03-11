@@ -5,11 +5,22 @@ import sys
 # Define the virtual environment directory
 VENV_DIR = "venv"
 
+# Specify the Homebrew Python 3.12 binary
+PYTHON_312 = "/opt/homebrew/bin/python3.12"
+
+def check_python_binary():
+    """Ensure the specified Python 3.12 binary exists."""
+    if not os.path.exists(PYTHON_312):
+        print(f"Error: {PYTHON_312} not found. Please install Python 3.12 via Homebrew:")
+        print("  brew install python@3.12")
+        sys.exit(1)
+    print(f"Using Python 3.12 at {PYTHON_312}")
+
 def create_virtual_env():
-    """Create a virtual environment if it doesn't exist."""
+    """Create a virtual environment using Python 3.12 if it doesn't exist."""
     if not os.path.exists(VENV_DIR):
-        print(f"Creating virtual environment in {VENV_DIR}...")
-        subprocess.run([sys.executable, "-m", "venv", VENV_DIR], check=True)
+        print(f"Creating virtual environment in {VENV_DIR} with {PYTHON_312}...")
+        subprocess.run([PYTHON_312, "-m", "venv", VENV_DIR], check=True)
     else:
         print(f"Virtual environment already exists in {VENV_DIR}.")
 
@@ -20,21 +31,23 @@ def get_python_cmd():
     return os.path.join(VENV_DIR, "bin", "python")
 
 def install_requirements():
-    """Install dependencies from requirements.txt in the virtual environment."""
+    """Install dependencies from requirements.txt and download spaCy model in the virtual environment."""
     requirements_file = "requirements.txt"
     python_cmd = get_python_cmd()
 
     if not os.path.exists(requirements_file):
         print(f"Error: {requirements_file} not found. Creating it with default dependencies.")
         with open(requirements_file, 'w') as f:
-            f.write("requests\nsentence-transformers\nfaiss-cpu\nnumpy\npdfplumber\ntqdm\n")
+            f.write("requests\nsentence-transformers\nfaiss-cpu\nnumpy\npdfplumber\ntqdm\npandas\nopenpyxl\ncolorama\nspacy==3.7.2\n")
     
     print("Installing dependencies from requirements.txt...")
     try:
         subprocess.run([python_cmd, "-m", "pip", "install", "--upgrade", "pip"], check=True)
         subprocess.run([python_cmd, "-m", "pip", "install", "-r", requirements_file], check=True)
+        print("Downloading spaCy model 'en_core_web_sm'...")
+        subprocess.run([python_cmd, "-m", "spacy", "download", "en_core_web_sm"], check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error installing dependencies: {e}")
+        print(f"Error during installation: {e}")
         sys.exit(1)
 
 def download_cci_xml():
@@ -93,6 +106,8 @@ def run_demo(selected_model):
 
 def main():
     """Main function to set up the environment, install dependencies, and run the demo."""
+    check_python_binary()
+
     models = [
         ("all-MiniLM-L12-v2", "Fast and lightweight (12 layers). Great for quick testing, but less accurate on complex queries."),
         ("all-mpnet-base-v2", "Balanced performance and speed. Strong general-purpose model, recommended for most use cases."),
