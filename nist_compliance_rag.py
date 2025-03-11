@@ -130,26 +130,43 @@ def extract_high_baseline_controls(json_data):
     logging.info(f"Loaded {len(controls)} controls from NIST 800-53 Rev 5 High baseline.")
     return controls
 
-def load_cci_mapping(cci_file):
-    """Load CCI-to-NIST mapping from U_CCI_List.xml."""
+def load_cci_mapping(cci_xml_path):
     cci_to_nist = {}
+    ns = {'cci': 'http://iase.disa.mil/cci'}  # Namespace for CCI XML
     try:
-        tree = ET.parse(cci_file)
+        tree = ET.parse(cci_xml_path)
         root = tree.getroot()
-        ns = {'ns': 'http://iase.disa.mil/cci'}
-        for cci_item in root.findall('.//ns:cci_item', ns):
+        items_found = 0
+        for cci_item in root.findall('.//cci:cci_item', ns):
             cci_id = cci_item.get('id')
-            for ref in cci_item.findall('.//ns:reference', ns):
-                if ref.get('title') == 'NIST SP 800-53':
-                    control_id = ref.get('index')
-                    if control_id and re.match(r'[A-Z]{2}-[0-9]+', control_id.split()[0]):
-                        cci_to_nist[cci_id] = normalize_control_id(control_id.split()[0])
-                        break
-        logging.info(f"Loaded {len(cci_to_nist)} CCI-to-NIST mappings from {cci_file}")
+            rev5_control = None
+            for ref in cci_item.findall('.//cci:reference', ns):
+                ref_title = ref.get('title')
+                ref_index = ref.get('index')  # Use 'index' attribute for control ID
+                if ref_title == 'NIST SP 800-53 Revision 5':
+                    rev5_control = ref_index
+                    break  # Take the first Rev 5 reference
+            if rev5_control:
+                cci_to_nist[cci_id] = rev5_control
+                items_found += 1
+        
+        logging.info(f"Loaded {len(cci_to_nist)} CCI-to-NIST mappings from XML")
+        
+        if not cci_to_nist:
+            raise ValueError("No CCI-to-NIST mappings found in XML")
+            
     except Exception as e:
-        logging.error(f"CCI mapping failed: {e}")
-        cci_to_nist = {'CCI-000196': 'IA-5', 'CCI-000048': 'AC-7', 'CCI-002450': 'SC-13'}
-        logging.info(f"Using fallback CCI-to-NIST mapping with {len(cci_to_nist)} entries.")
+        logging.error(f"Failed to parse CCI XML: {e}")
+        cci_to_nist = {
+            'CCI-000196': 'IA-5',
+            'CCI-000048': 'AC-7',
+            'CCI-002450': 'SC-13',
+            'CCI-000130': 'AU-3',
+            'CCI-000366': 'CM-6',
+            'CCI-001764': 'CM-7 (5)'
+        }
+        logging.warning("Falling back to hardcoded CCI-to-NIST dictionary")
+    
     return cci_to_nist
 
 def parse_stig_xccdf(xccdf_data, cci_to_nist):
@@ -192,6 +209,7 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
             for cci in ccis:
                 cci_id = cci.text
                 control_id = cci_to_nist.get(cci_id)
+                #print(f"CCI: {cci_id}, Mapped to: {control_id}")  # Debug print with 4-space indent
                 if control_id:
                     if control_id not in stig_recommendations:
                         stig_recommendations[control_id] = []
@@ -414,15 +432,15 @@ def main():
     print("Type 'help' for examples, 'list stigs' to see available STIGs, 'exit' to quit.\n")
 
     while True:
-        query = input(f"{Fore.YELLOW}Enter your compliance question (e.g., 'How should AU-3 be implemented for Windows?'): {Style.RESET_ALL}").strip()
+        query = input(f"{Fore.YELLOW}Enter your compliance question (e.g., 'How should IA-5 be implemented for Windows?'): {Style.RESET_ALL}").strip()
         if query.lower() == 'exit':
             break
         if query.lower() == 'help':
             print("Examples:")
-            print("- How should AU-3 be implemented for Windows?")
+            print("- How should IA-5 be implemented for Windows?")
             print("- List STIGs")
             print("- List STIGs for Red Hat")
-            print("- What is IA-5?")
+            print("- What is AC-7?")
             continue
         if not query:
             continue
