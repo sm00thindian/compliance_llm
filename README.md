@@ -94,6 +94,7 @@ spacy==3.7.2
 ```
 # Project Structure
 
+```
 nist-compliance-rag-explorer/
 ├── classic_demo.py       # Setup script
 ├── nist_compliance_rag.py # Main program
@@ -103,6 +104,7 @@ nist-compliance-rag-explorer/
 ├── knowledge/            # Generated data (e.g., FAISS index, logs)
 ├── README.md             # This file
 └── LICENSE               # Apache 2.0 License
+```
 
 # Troubleshooting
 Python Version Error: If /opt/homebrew/bin/python3.12 isn’t found, install it with brew install python@3.12.
