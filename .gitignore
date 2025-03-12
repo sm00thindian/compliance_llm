@@ -4,7 +4,7 @@ U_CCI_List.xml
 knowledge/
 venv/
 assessment_checklists/
-config.ini
+config/config.ini
 *.pyc
 __pycache__/
 *.log
