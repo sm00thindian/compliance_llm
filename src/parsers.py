@@ -1,4 +1,3 @@
-# src/parsers.py
 import re
 import os
 import pandas as pd
@@ -37,6 +36,11 @@ def extract_controls_from_excel(excel_file):
 
     Returns:
         list: A list of dictionaries, each containing control details (id, title, description, parameters, related_controls).
+
+    Example:
+        >>> controls = extract_controls_from_excel('sp800-53r5-control-catalog.xlsx')
+        >>> print(controls[0]['control_id'])
+        'AC-1'
     """
     controls = []
     df = pd.read_excel(excel_file, sheet_name='SP 800-53 Revision 5', header=None, skiprows=1)
@@ -56,13 +60,18 @@ def extract_controls_from_excel(excel_file):
 
 def extract_controls_from_json(json_data):
     """
-    Extract NIST 800-53 controls from JSON data (OSCAL format).
+    Extract NIST 800-53 controls from JSON data.
 
     Args:
         json_data (dict): The JSON data containing control catalog information.
 
     Returns:
         list: A list of dictionaries with control details (id, title, description, parameters, related_controls).
+
+    Example:
+        >>> controls = extract_controls_from_json({'catalog': {'groups': [{'controls': [{'id': 'AC-1', 'title': 'Access Control Policy', 'description': 'Desc'}]}}]})
+        >>> print(controls[0]['control_id'])
+        'AC-1'
     """
     controls = []
     if not json_data or 'catalog' not in json_data:
@@ -86,37 +95,20 @@ def extract_controls_from_json(json_data):
     logging.info(f"Loaded {len(controls)} controls from NIST 800-53 Rev 5 JSON catalog.")
     return controls
 
-def extract_high_baseline_controls(json_data):
-    """
-    Extract controls from NIST 800-53 Rev 5 High baseline JSON.
-
-    Args:
-        json_data (dict): The JSON data containing the high baseline profile.
-
-    Returns:
-        list: A list of strings representing controls in the high baseline.
-    """
-    controls = []
-    if not json_data or 'profile' not in json_data:
-        logging.error("Invalid JSON structure: 'profile' key missing.")
-        return controls
-    for import_ in json_data['profile'].get('imports', []):
-        for include in import_.get('include-controls', []):
-            control_id = include.get('with-ids', [''])[0].upper()
-            if control_id:
-                controls.append(f"NIST 800-53 Rev 5 High Baseline, {control_id}: Included in High baseline.")
-    logging.info(f"Loaded {len(controls)} controls from NIST 800-53 Rev 5 High baseline.")
-    return controls
-
 def extract_assessment_procedures(json_data):
     """
-    Extract assessment procedures from NIST SP 800-53A JSON.
+    Extract assessment procedures from NIST 800-53A JSON data.
 
     Args:
         json_data (dict): The JSON data containing assessment plan information.
 
     Returns:
-        dict: A dictionary mapping control IDs to assessment methods.
+        dict: A dictionary mapping control IDs to their assessment methods.
+
+    Example:
+        >>> assessments = extract_assessment_procedures({'assessment-plan': {'objectives-and-methods': [{'target-id': 'AU-3', 'assessment-methods': [{'description': 'Check logs'}]}}]})
+        >>> print(assessments['AU-3'])
+        ['Check logs']
     """
     assessments = {}
     if not json_data or 'assessment-plan' not in json_data:
@@ -130,6 +122,33 @@ def extract_assessment_procedures(json_data):
     logging.info(f"Loaded {len(assessments)} assessment procedures from NIST SP 800-53A.")
     return assessments
 
+def extract_high_baseline_controls(json_data):
+    """
+    Extract controls included in the NIST 800-53 Rev 5 High baseline from JSON data.
+
+    Args:
+        json_data (dict): The JSON data containing profile information.
+
+    Returns:
+        list: A list of strings indicating controls in the High baseline.
+
+    Example:
+        >>> controls = extract_high_baseline_controls({'profile': {'imports': [{'include-controls': [{'with-ids': ['AC-1']}]}]}})
+        >>> print(controls[0])
+        'NIST 800-53 Rev 5 High Baseline, AC-1: Included in High baseline.'
+    """
+    controls = []
+    if not json_data or 'profile' not in json_data:
+        logging.error("Invalid JSON structure: 'profile' key missing.")
+        return controls
+    for import_ in json_data['profile'].get('imports', []):
+        for include in import_.get('include-controls', []):
+            control_id = include.get('with-ids', [''])[0].upper()
+            if control_id:
+                controls.append(f"NIST 800-53 Rev 5 High Baseline, {control_id}: Included in High baseline.")
+    logging.info(f"Loaded {len(controls)} controls from NIST 800-53 Rev 5 High baseline.")
+    return controls
+
 def load_cci_mapping(cci_xml_path):
     """
     Load CCI-to-NIST control mappings from an XML file.
@@ -139,6 +158,11 @@ def load_cci_mapping(cci_xml_path):
 
     Returns:
         dict: A dictionary mapping CCI IDs to NIST control IDs.
+
+    Example:
+        >>> cci_to_nist = load_cci_mapping('U_CCI_List.xml')
+        >>> print(cci_to_nist.get('CCI-000130'))
+        'AU-3'
     """
     cci_to_nist = {}
     ns = {'cci': 'http://iase.disa.mil/cci'}
@@ -153,14 +177,7 @@ def load_cci_mapping(cci_xml_path):
         logging.info(f"Loaded {len(cci_to_nist)} CCI-to-NIST mappings from XML")
     except Exception as e:
         logging.error(f"Failed to parse CCI XML: {e}")
-        cci_to_nist = {
-            'CCI-000196': 'IA-5',
-            'CCI-000048': 'AC-7',
-            'CCI-002450': 'SC-13',
-            'CCI-000130': 'AU-3',
-            'CCI-000366': 'CM-6',
-            'CCI-001764': 'CM-7(5)'
-        }
+        cci_to_nist = {'CCI-000196': 'IA-5', 'CCI-000048': 'AC-7', 'CCI-002450': 'SC-13', 'CCI-000130': 'AU-3', 'CCI-000366': 'CM-6', 'CCI-001764': 'CM-7 (5)'}
         logging.warning("Falling back to hardcoded CCI-to-NIST dictionary")
     return cci_to_nist
 
@@ -169,12 +186,24 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
     Parse STIG XCCDF file to extract rules and map to NIST controls via CCI.
 
     Args:
-        xccdf_data (bytes): The raw XCCDF file content.
+        xccdf_data (bytes): Raw XML data from the STIG file.
         cci_to_nist (dict): Mapping of CCI IDs to NIST control IDs.
 
     Returns:
         tuple: (stig_recommendations, technology, title, benchmark_id, version)
+            - stig_recommendations (dict): Recommendations mapped to NIST controls.
+            - technology (str): Technology name (e.g., 'Windows 10').
+            - title (str): STIG title.
+            - benchmark_id (str): STIG benchmark ID.
+            - version (str): STIG version.
+
+    Example:
+        >>> with open('stig.xml', 'rb') as f: xccdf_data = f.read()
+        >>> recs, tech, title, bid, ver = parse_stig_xccdf(xccdf_data, {'CCI-000130': 'AU-3'})
+        >>> print(tech)
+        'Windows 10'
     """
+    stig_recommendations = {}  # Initialize here to avoid NameError
     try:
         root = ET.fromstring(xccdf_data)
         ns = {'xccdf': root.tag.split('}')[0][1:]}
@@ -197,13 +226,11 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
         
         fixtexts = {fix.get('fixref'): fix.text for fix in root.findall('.//xccdf:fixtext', ns) if fix.text}
         
-        stig_recommendations = {}
         rules = root.findall('.//xccdf:Rule', ns)
         logging.info(f"Found {len(rules)} rules in STIG")
         
         for rule in rules:
             rule_id = rule.get('id')
-            severity = rule.get('severity', 'medium')
             title_elem = rule.find('.//xccdf:title', ns)
             title_text = title_elem.text if title_elem is not None else "No title"
             fix_elem = rule.find('.//xccdf:fix', ns)
@@ -221,8 +248,7 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
                         stig_recommendations[control_id].append({
                             'rule_id': rule_id,
                             'title': title_text,
-                            'fix': fix_text,
-                            'severity': severity
+                            'fix': fix_text
                         })
                     logging.debug(f"Mapped {cci_id} to {control_id} for rule {rule_id}")
         
@@ -230,18 +256,25 @@ def parse_stig_xccdf(xccdf_data, cci_to_nist):
         return stig_recommendations, technology, title, benchmark_id, version
     except Exception as e:
         logging.error(f"Failed to parse STIG XCCDF: {e}")
-        raise
+        return {}, "Unknown", "Untitled STIG", "Unknown", "Unknown"  # Return defaults on failure
 
 def load_stig_data(stig_folder, cci_to_nist):
     """
-    Load STIG data from XCCDF files in the specified folder.
+    Load STIG data from XML files in the specified folder and map to NIST controls.
 
     Args:
-        stig_folder (str): Directory containing STIG XCCDF files.
+        stig_folder (str): Directory containing STIG XML files.
         cci_to_nist (dict): Mapping of CCI IDs to NIST control IDs.
 
     Returns:
         tuple: (all_stig_recommendations, available_stigs)
+            - all_stig_recommendations (dict): STIG recommendations grouped by technology.
+            - available_stigs (list): List of STIG metadata dictionaries.
+
+    Example:
+        >>> recs, stigs = load_stig_data('./stigs', {'CCI-000130': 'AU-3'})
+        >>> print(len(stigs))
+        2
     """
     all_stig_recommendations = {}
     available_stigs = []
@@ -264,4 +297,7 @@ def load_stig_data(stig_folder, cci_to_nist):
             logging.info(f"Successfully loaded STIG: {os.path.basename(stig_file)}")
         except Exception as e:
             logging.error(f"Failed to load STIG file '{stig_file}': {e}")
+            continue  # Skip to next file on failure
+    
+    logging.debug(f"Loaded {len(available_stigs)} STIGs: {[stig['file'] for stig in available_stigs]}")
     return all_stig_recommendations, available_stigs

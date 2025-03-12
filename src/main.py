@@ -1,8 +1,8 @@
-# src/main.py
 import argparse
 import configparser
 import logging
 import os
+import pickle
 from colorama import init, Fore, Style
 from .data_fetchers import fetch_json_data, fetch_excel_data
 from .parsers import (
@@ -23,6 +23,24 @@ logging.basicConfig(
     filemode='w'
 )
 
+UNKNOWN_QUERIES_FILE = os.path.join(KNOWLEDGE_DIR, 'unknown_queries.pkl')
+
+def save_unknown_query(query):
+    """Save an unknown query for future training."""
+    unknown_queries = load_unknown_queries()
+    if query not in unknown_queries:
+        unknown_queries.append(query)
+        with open(UNKNOWN_QUERIES_FILE, 'wb') as f:
+            pickle.dump(unknown_queries, f)
+        logging.info(f"Saved unknown query: {query}")
+
+def load_unknown_queries():
+    """Load previously saved unknown queries."""
+    if os.path.exists(UNKNOWN_QUERIES_FILE):
+        with open(UNKNOWN_QUERIES_FILE, 'rb') as f:
+            return pickle.load(f)
+    return []
+
 def main():
     parser = argparse.ArgumentParser(description="NIST Compliance RAG Demo")
     parser.add_argument('--model', type=str, default='all-mpnet-base-v2', help='SentenceTransformer model name')
@@ -31,6 +49,7 @@ def main():
     config = configparser.ConfigParser()
     config.read('config/config.ini')
     stig_folder = config.get('DEFAULT', 'stig_folder', fallback='./stigs')
+    logging.debug(f"Resolved stig_folder: {os.path.abspath(stig_folder)}")
     nist_800_53_xls_url = config.get('DEFAULT', 'nist_800_53_xls_url')
     catalog_url = config.get('DEFAULT', 'catalog_url')
     high_baseline_url = config.get('DEFAULT', 'high_baseline_url')
@@ -61,19 +80,21 @@ def main():
     model, index, doc_list = build_vector_store(all_documents, args.model, KNOWLEDGE_DIR)
 
     print(f"{Fore.CYAN}Loading CCI-to-NIST mapping...{Style.RESET_ALL}")
-    cci_to_nist = load_cci_mapping('U_CCI_List.xml')
+    cci_to_nist = load_cci_mapping(os.path.join(KNOWLEDGE_DIR, 'U_CCI_List.xml'))
 
     print(f"{Fore.CYAN}Loading STIG data from folder: {stig_folder}{Style.RESET_ALL}")
     all_stig_recommendations, available_stigs = load_stig_data(stig_folder, cci_to_nist)
+    logging.debug(f"Loaded {len(available_stigs)} STIGs: {[stig['file'] for stig in available_stigs]}")
 
     control_details = {ctrl['control_id']: ctrl for ctrl in catalog_data}
     high_baseline_controls = {normalize_control_id(entry.split(', ')[1].split(': ')[0]) for entry in high_baseline_data}
 
     print(f"{Fore.GREEN}Welcome to the Compliance RAG Demo with NIST 800-53 Rev 5 Catalog, 800-53A, and STIG Knowledge{Style.RESET_ALL}")
-    print("Type 'help' for examples, 'list stigs' to see available STIGs, 'exit' to quit.\n")
+    print("Type 'help' for examples, 'list stigs' to see available STIGs, 'show unknown' to see unhandled queries, 'exit' to quit.\n")
 
     while True:
-        query = input(f"{Fore.YELLOW}Enter your compliance question (e.g., 'How do I assess AU-3?', 'exit'):{Style.RESET_ALL}").strip()
+        print(f"{Fore.YELLOW}Enter your compliance question (e.g., 'How do I assess AU-3?', 'exit'):{Style.RESET_ALL}")
+        query = input().strip()
         if query.lower() == 'exit':
             break
         if query.lower() == 'help':
@@ -81,59 +102,46 @@ def main():
             print("- How should IA-5 be implemented for Windows?")
             print("- How do I assess AU-3?")
             print("- List STIGs")
+            print("- Show unknown (displays previously unhandled queries)")
+            continue
+        if query.lower() == 'show unknown':
+            unknown_queries = load_unknown_queries()
+            if unknown_queries:
+                print(f"{Fore.CYAN}Previously unhandled queries:{Style.RESET_ALL}")
+                for i, q in enumerate(unknown_queries, 1):
+                    print(f"{i}. {q}")
+            else:
+                print("No unknown queries recorded yet.")
             continue
         if not query:
+            print("Please enter a query or type 'help' for examples.")
             continue
 
         generate_checklist = False
-        selected_tech = None
-        
-        # Checklist and STIG technology prompt for assessment queries
         if "assess" in query.lower() or "audit" in query.lower():
-            if "for" not in query.lower():
-                available_techs = list(all_stig_recommendations.keys())
-                if available_techs:
-                    print(f"{Fore.YELLOW}Multiple STIG technologies available:{Style.RESET_ALL}")
-                    for i, tech in enumerate(available_techs, 1):
-                        print(f"  {i}. {tech}")
-                    while True:
-                        try:
-                            choice = input(f"{Fore.YELLOW}Select a technology (1-{len(available_techs)}, or 0 for all): {Style.RESET_ALL}").strip()
-                            choice = int(choice)
-                            if 0 <= choice <= len(available_techs):
-                                selected_tech = available_techs[choice - 1] if choice > 0 else None
-                                break
-                            print(f"Please enter a number between 0 and {len(available_techs)}.")
-                        except ValueError:
-                            print("Invalid input. Please enter a number.")
             while True:
                 checklist_response = input(f"{Fore.YELLOW}Generate an assessment checklist for this query? (y/n): {Style.RESET_ALL}").strip().lower()
                 if checklist_response in ('y', 'n'):
                     generate_checklist = checklist_response == 'y'
                     break
                 print("Please enter 'y' for yes or 'n' for no.")
-        
-        # STIG technology prompt for implementation queries without system type
-        if "implement" in query.lower() and "for" not in query.lower():
-            available_techs = list(all_stig_recommendations.keys())
-            if available_techs:
-                print(f"{Fore.YELLOW}Multiple STIG technologies available:{Style.RESET_ALL}")
-                for i, tech in enumerate(available_techs, 1):
-                    print(f"  {i}. {tech}")
-                while True:
-                    try:
-                        choice = input(f"{Fore.YELLOW}Select a technology (1-{len(available_techs)}, or 0 for all): {Style.RESET_ALL}").strip()
-                        choice = int(choice)
-                        if 0 <= choice <= len(available_techs):
-                            selected_tech = available_techs[choice - 1] if choice > 0 else None
-                            break
-                        print(f"Please enter a number between 0 and {len(available_techs)}.")
-                    except ValueError:
-                        print("Invalid input. Please enter a number.")
 
         print(f"\n{Fore.CYAN}Processing...{Style.RESET_ALL}")
         retrieved_docs = retrieve_documents(query, model, index, doc_list)
-        response = generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, generate_checklist, selected_tech)
+        
+        response = generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, generate_checklist=generate_checklist)
+        
+        if "Multiple STIG technologies available" in response:
+            print(response)
+            selected_idx = input().strip()
+            if selected_idx.isdigit():
+                selected_idx = int(selected_idx)
+                response = generate_response(f"{query} with technology index {selected_idx}", retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, generate_checklist=generate_checklist)
+        
+        if "not found" in response.lower() or "no specific" in response.lower() or len(retrieved_docs) == 0:
+            save_unknown_query(query)
+            response += f"\n{Fore.YELLOW}Note: This query has been recorded for future improvement. Type 'show unknown' to see all recorded queries.{Style.RESET_ALL}"
+        
         print(f"\n{Fore.CYAN}### Response to '{query}'{Style.RESET_ALL}\n{response}\n")
 
 if __name__ == "__main__":

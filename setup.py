@@ -1,9 +1,11 @@
 import os
 import subprocess
 import sys
+import shutil
 
 VENV_DIR = "venv"
 PYTHON_312 = "/opt/homebrew/bin/python3.12"
+KNOWLEDGE_DIR = "knowledge"
 
 def check_python_binary():
     if not os.path.exists(PYTHON_312):
@@ -42,20 +44,22 @@ def install_requirements():
 
 def download_cci_xml():
     python_cmd = get_python_cmd()
-    cci_file = "U_CCI_List.xml"
+    os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
+    cci_file = os.path.join(KNOWLEDGE_DIR, "U_CCI_List.xml")
     if os.path.exists(cci_file):
         print(f"{cci_file} already exists.")
         return
     print("Downloading CCI XML...")
-    subprocess.run([python_cmd, "-c", """
+    subprocess.run([python_cmd, "-c", f"""
 import requests, zipfile, os
 url = 'https://dl.dod.cyber.mil/wp-content/uploads/stigs/zip/U_CCI_List.zip'
 r = requests.get(url, stream=True); r.raise_for_status()
 with open('U_CCI_List.zip', 'wb') as f:
     for chunk in r.iter_content(8192): f.write(chunk)
 with zipfile.ZipFile('U_CCI_List.zip', 'r') as z: z.extract('U_CCI_List.xml')
+os.rename('U_CCI_List.xml', '{cci_file}')
 os.remove('U_CCI_List.zip')
-print('Downloaded and extracted U_CCI_List.xml')
+print('Downloaded and extracted U_CCI_List.xml to {cci_file}')
 """], check=True)
 
 def run_demo(selected_model):
