@@ -4,6 +4,8 @@ import pickle
 import logging
 from sentence_transformers import SentenceTransformer
 import faiss
+import re
+from .parsers import normalize_control_id
 
 def build_vector_store(documents, model_name, knowledge_dir):
     """
@@ -64,5 +66,10 @@ def retrieve_documents(query, model, index, doc_list, top_k=100):
     query_embedding = model.encode([query])
     distances, indices = index.search(query_embedding, top_k)
     retrieved_docs = [doc_list[idx] for idx in indices[0]]
+    # Filter for exact control ID match if present in query
+    control_match = re.search(r'(\w{2}-\d+(?:\([a-z0-9]+\))?)', query, re.IGNORECASE)
+    if control_match:
+        control_id = normalize_control_id(control_match.group(1).upper())
+        retrieved_docs = [doc for doc in retrieved_docs if control_id in doc] or retrieved_docs[:5]  # Fallback to top 5 if no exact match
     logging.info(f"Retrieved {len(retrieved_docs)} documents for query")
     return retrieved_docs

@@ -101,6 +101,9 @@ def main():
             print("Examples:")
             print("- How should IA-5 be implemented for Windows?")
             print("- How do I assess AU-3?")
+            print("- What is CCI-000130? (CCI lookup)")
+            print("- List CCI mappings for AU-3 (Reverse CCI lookup)")
+            print("- Show CCI mappings (CCI summary)")
             print("- List STIGs")
             print("- Show unknown (displays previously unhandled queries)")
             continue
@@ -129,14 +132,14 @@ def main():
         print(f"\n{Fore.CYAN}Processing...{Style.RESET_ALL}")
         retrieved_docs = retrieve_documents(query, model, index, doc_list)
         
-        response = generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, generate_checklist=generate_checklist)
+        response = generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, cci_to_nist, generate_checklist=generate_checklist)
         
         if "Multiple STIG technologies available" in response:
             print(response)
             selected_idx = input().strip()
             if selected_idx.isdigit():
                 selected_idx = int(selected_idx)
-                response = generate_response(f"{query} with technology index {selected_idx}", retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, generate_checklist=generate_checklist)
+                response = generate_response(f"{query} with technology index {selected_idx}", retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, cci_to_nist, generate_checklist=generate_checklist)
         
         if "not found" in response.lower() or "no specific" in response.lower() or len(retrieved_docs) == 0:
             save_unknown_query(query)

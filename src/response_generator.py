@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from colorama import Fore, Style
 from .text_processing import extract_actionable_steps
+from .parsers import normalize_control_id
 
 family_purposes = {
     "AC": "manage access to information systems and resources",
@@ -57,10 +58,55 @@ def get_technology_name(stig):
         return " ".join(word for word in title.split() if "STIG" not in word and "V" not in word and "R" not in word[:2])
     return tech
 
-def generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, generate_checklist=False):
+def generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, cci_to_nist, generate_checklist=False):
     query_lower = query.lower()
     response = []
 
+    # CCI-specific query handling
+    # 1. Specific CCI lookup (e.g., "What is CCI-000130?")
+    cci_match = re.search(r"(cci-\d+)", query_lower)
+    if cci_match:
+        cci_id = cci_match.group(1).upper()
+        nist_control = cci_to_nist.get(cci_id, "Not mapped to NIST 800-53 Rev 5")
+        normalized_control = normalize_control_id(nist_control)
+        response.append(f"{Fore.CYAN}CCI Lookup:{Style.RESET_ALL}")
+        response.append(f"- {cci_id} maps to NIST {normalized_control}")
+        if normalized_control in control_details:
+            ctrl = control_details[normalized_control]
+            response.append(f"- **Title:** {ctrl['title']}")
+            response.append(f"- **Description:** {ctrl['description']}")
+        return "\n".join(response)
+
+    # 2. Reverse lookup (e.g., "List CCI mappings for AU-3" or "CCI Mappings for AC-2" or "Show CCI mappings for AC-2")
+    reverse_match = re.search(r"(?:list|show)?\s*cci\s*mappings\s*for\s*(\w{2}-\d+(?:\s*[a-z])?(?:\([a-z0-9]+\))?)", query_lower)
+    if reverse_match:
+        control_id = normalize_control_id(reverse_match.group(1).upper())
+        matching_ccis = [cci for cci, nist in cci_to_nist.items() if normalize_control_id(nist) == control_id]
+        response.append(f"{Fore.CYAN}CCI Mappings for {control_id}:{Style.RESET_ALL}")
+        if matching_ccis:
+            for cci in matching_ccis:
+                response.append(f"- {cci} -> {control_id}")
+            if control_id in control_details:
+                ctrl = control_details[control_id]
+                response.append(f"\n- **Title:** {ctrl['title']}")
+                response.append(f"- **Description:** {ctrl['description']}")
+        else:
+            response.append(f"- No CCI mappings found for {control_id}.")
+        return "\n".join(response)
+
+    # 3. Summary of all mappings (e.g., "Show CCI mappings")
+    if "show cci mappings" in query_lower and not reverse_match:
+        response.append(f"{Fore.CYAN}CCI-to-NIST Mappings Summary:{Style.RESET_ALL}")
+        response.append(f"- Total mappings: {len(cci_to_nist)}")
+        response.append("- Sample mappings (first 5):")
+        for cci, nist in list(cci_to_nist.items())[:5]:
+            response.append(f"  - {cci} -> {nist}")
+        if len(cci_to_nist) > 5:
+            response.append(f"- ...and {len(cci_to_nist) - 5} more.")
+        response.append(f"{Fore.YELLOW}Note:{Style.RESET_ALL} Subparts (e.g., 'A', '1 (A)') refer to specific NIST 800-53 requirements or enhancements. Use 'List CCI mappings for <control>' for full control details.")
+        return "\n".join(response)
+
+    # Control summary logic (e.g., "What is AC-2?")
     control_summary_match = re.search(r"what is\s+(\w{2}-\d+(?:\(\d+\))?)\s*\?", query_lower)
     if control_summary_match:
         control_id = control_summary_match.group(1).upper()
@@ -93,6 +139,7 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
             response.append(f"Control {control_id} not found in the NIST 800-53 Revision 5 catalog.")
         return "\n".join(response)
 
+    # STIG listing logic
     if "list stigs" in query_lower:
         keyword = query_lower.split("for")[1].strip() if "for" in query_lower else None
         filtered_stigs = [
