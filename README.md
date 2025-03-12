@@ -22,13 +22,15 @@ The NIST Compliance RAG Explorer is a Python-based tool that leverages Retrieval
 ```bash
 git clone https://github.com/sm00thindian/nist-compliance-rag-explorer.git
 cd nist-compliance-rag-explorer
-
-# Step 2: Install Python
+```
+# Step 2: Install Python Version 3.12
+```
 brew install python@3.12
-
+```
 # Step 3: Set Up the Environment and Run the Demo
+```
 /opt/homebrew/bin/python3.12 classic_demo.py
-
+```
 This script will:
 
 Create a virtual environment (venv) using Python 3.12.
@@ -37,23 +39,17 @@ Download the CCI XML mapping file (U_CCI_List.xml).
 Prompt you to select a Sentence Transformer model (e.g., all-mpnet-base-v2).
 Launch the interactive demo (nist_compliance_rag.py).
 
-Configuration
+##Configuration
 The config.ini file specifies data sources. The default configuration is:
-
-ini
-
-Collapse
-
-Wrap
-
-Copy
+```
 [DEFAULT]
 stig_folder = /Users/kilynn/Projects/nist-compliance-rag-explorer/stigs
 nist_800_53_xls_url = https://csrc.nist.gov/files/pubs/sp/800/53/r5/upd1/final/docs/sp800-53r5-control-catalog.xlsx
 catalog_url = https://raw.githubusercontent.com/usnistgov/oscal-content/refs/heads/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json
 high_baseline_url = https://raw.githubusercontent.com/usnistgov/oscal-content/refs/heads/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_HIGH-baseline_profile.json
 nist_800_53a_json_url = https://raw.githubusercontent.com/usnistgov/oscal-content/master/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_HIGH-baseline_assessment.json
-Notes:
+```
+##Notes:
 Update stig_folder to match your local STIG directory.
 Place STIG XCCDF XML files in the stig_folder directory for parsing.
 Usage
@@ -67,13 +63,6 @@ Exit: exit
 Help: help for examples
 Example output for How do I assess AU-3? (with 800-53A data):
 
-text
-
-Collapse
-
-Wrap
-
-Copy
 ### Response to 'How do I assess AU-3?'
 **Answering:** 'How do I assess AU-3?'
 Here’s what I found based on NIST 800-53 and available STIGs:
@@ -93,7 +82,7 @@ Here’s what I found based on NIST 800-53 and available STIGs:
 **More Info:** [NIST 800-53 Assessment Procedures](https://csrc.nist.gov/projects/risk-management/sp800-53-controls/assessment-procedures)
 # Dependencies
 Listed in requirements.txt:
-
+```
 requests
 sentence-transformers
 faiss-cpu
@@ -104,9 +93,7 @@ pandas
 openpyxl
 colorama
 spacy==3.7.2
-Project Structure
-text
-
+```
 # Project Structure
 
 nist-compliance-rag-explorer/
