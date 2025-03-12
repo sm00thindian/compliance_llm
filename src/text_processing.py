@@ -1,10 +1,22 @@
-# src/text_processing.py
 import spacy
 
 nlp = spacy.load('en_core_web_sm')
 
 def extract_actionable_steps(description):
-    """Extract actionable steps from a description using spaCy."""
+    """
+    Extract actionable steps from a control description using spaCy.
+
+    Args:
+        description (str): The control description to analyze.
+
+    Returns:
+        list: A list of actionable steps (e.g., 'verify access control', 'check encryption').
+
+    Example:
+        >>> steps = extract_actionable_steps('Ensure that access control is enforced.')
+        >>> print(steps)
+        ['ensure access control']
+    """
     doc = nlp(description.lower())
     steps = []
     action_verbs = {'verify', 'ensure', 'check', 'review', 'confirm', 'examine'}

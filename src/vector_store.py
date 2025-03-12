@@ -1,4 +1,3 @@
-# src/vector_store.py
 import os
 import hashlib
 import pickle
@@ -7,7 +6,23 @@ from sentence_transformers import SentenceTransformer
 import faiss
 
 def build_vector_store(documents, model_name, knowledge_dir):
-    """Build or load a FAISS vector store from documents."""
+    """
+    Build or load a FAISS vector store from a list of documents.
+
+    Args:
+        documents (list): List of strings representing the documents.
+        model_name (str): Name of the SentenceTransformer model to use.
+        knowledge_dir (str): Directory to save or load the FAISS index.
+
+    Returns:
+        tuple: (model, index, doc_list)
+            - model: The SentenceTransformer model.
+            - index: The FAISS index.
+            - doc_list: The list of documents.
+
+    Example:
+        >>> model, index, doc_list = build_vector_store(['doc1', 'doc2'], 'all-mpnet-base-v2', 'knowledge')
+    """
     index_file = os.path.join(knowledge_dir, f"faiss_index_{hashlib.md5(model_name.encode()).hexdigest()}.pkl")
     model = SentenceTransformer(model_name)
     logging.info(f"Load pretrained SentenceTransformer: {model_name}")
@@ -28,7 +43,24 @@ def build_vector_store(documents, model_name, knowledge_dir):
     return model, index, doc_list
 
 def retrieve_documents(query, model, index, doc_list, top_k=100):
-    """Retrieve top-k relevant documents for a query."""
+    """
+    Retrieve the top-k most relevant documents for a given query.
+
+    Args:
+        query (str): The query string.
+        model (SentenceTransformer): The SentenceTransformer model.
+        index (faiss.Index): The FAISS index.
+        doc_list (list): The list of documents.
+        top_k (int, optional): Number of documents to retrieve. Defaults to 100.
+
+    Returns:
+        list: The top-k relevant documents.
+
+    Example:
+        >>> retrieved = retrieve_documents('How to implement AC-1?', model, index, doc_list)
+        >>> print(len(retrieved))
+        100
+    """
     query_embedding = model.encode([query])
     distances, indices = index.search(query_embedding, top_k)
     retrieved_docs = [doc_list[idx] for idx in indices[0]]
