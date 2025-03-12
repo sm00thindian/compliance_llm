@@ -1,7 +1,5 @@
 # NIST Compliance RAG Explorer
 
-# Step 1
-
 The NIST Compliance RAG Explorer is a Python-based tool that leverages Retrieval-Augmented Generation (RAG) to provide detailed responses to compliance queries related to NIST 800-53 Revision 5 controls and Security Technical Implementation Guides (STIGs). It fetches and processes NIST 800-53 catalog data (JSON and Excel), high baseline controls, NIST SP 800-53A assessment procedures, and STIG recommendations, enabling users to query implementation guidance or detailed assessment steps for specific controls across various systems (e.g., Windows, Red Hat).
 
 ## Features
