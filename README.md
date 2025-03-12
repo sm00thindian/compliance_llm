@@ -20,6 +20,7 @@ The NIST Compliance RAG Explorer is a Python-based tool that leverages Retrieval
 ```bash
 git clone https://github.com/sm00thindian/nist-compliance-rag-explorer.git
 cd nist-compliance-rag-explorer
+Copy `config/config.ini.template` to `config/config.ini` and update `stig_folder` to your local STIG directory path (e.g., `/path/to/stigs`).
 ```
 # Step 2: Install Python Version 3.12
 ```
@@ -27,7 +28,7 @@ brew install python@3.12
 ```
 # Step 3: Set Up the Environment and Run the Demo
 ```
-/opt/homebrew/bin/python3.12 classic_demo.py
+/opt/homebrew/bin/python3.12 setup.py
 ```
 This script will:
 
@@ -35,7 +36,7 @@ Create a virtual environment (venv) using Python 3.12.
 Install dependencies from requirements.txt (including spacy==3.7.2 and the en_core_web_sm model).
 Download the CCI XML mapping file (U_CCI_List.xml).
 Prompt you to select a Sentence Transformer model (e.g., all-mpnet-base-v2).
-Launch the interactive demo (nist_compliance_rag.py).
+Launch the interactive demo (src/main.py).
 
 ##Configuration
 The config.ini file specifies data sources. The default configuration is:
