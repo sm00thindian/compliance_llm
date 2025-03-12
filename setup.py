@@ -26,10 +26,19 @@ def install_requirements():
     if not os.path.exists("requirements.txt"):
         print("Error: requirements.txt not found.")
         sys.exit(1)
+    
     print("Installing dependencies...")
-    subprocess.run([python_cmd, "-m", "pip", "install", "--upgrade", "pip"], check=True)
-    subprocess.run([python_cmd, "-m", "pip", "install", "-r", "requirements.txt"], check=True)
-    subprocess.run([python_cmd, "-m", "spacy", "download", "en_core_web_sm"], check=True)
+    print("  Step 1/3: Upgrading pip...", end=" ", flush=True)
+    subprocess.run([python_cmd, "-m", "pip", "install", "--upgrade", "pip", "--quiet"], check=True)
+    print("complete")
+
+    print("  Step 2/3: Installing requirements from requirements.txt...", end=" ", flush=True)
+    subprocess.run([python_cmd, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"], check=True)
+    print("complete")
+
+    print("  Step 3/3: Downloading spaCy model...", end=" ", flush=True)
+    subprocess.run([python_cmd, "-m", "spacy", "download", "en_core_web_sm", "--quiet"], check=True)
+    print("complete")
 
 def download_cci_xml():
     python_cmd = get_python_cmd()
@@ -51,7 +60,6 @@ print('Downloaded and extracted U_CCI_List.xml')
 
 def run_demo(selected_model):
     python_cmd = get_python_cmd()
-    # Run as a module from the project root
     subprocess.run([python_cmd, "-m", "src.main", "--model", selected_model], check=True, cwd=os.path.dirname(os.path.abspath(__file__)))
 
 def main():
