@@ -43,7 +43,7 @@ Launch the interactive demo (nist_compliance_rag.py).
 The config.ini file specifies data sources. The default configuration is:
 ```
 [DEFAULT]
-stig_folder = /Users/kilynn/Projects/nist-compliance-rag-explorer/stigs
+stig_folder = ~/stigs
 nist_800_53_xls_url = https://csrc.nist.gov/files/pubs/sp/800/53/r5/upd1/final/docs/sp800-53r5-control-catalog.xlsx
 catalog_url = https://raw.githubusercontent.com/usnistgov/oscal-content/refs/heads/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json
 high_baseline_url = https://raw.githubusercontent.com/usnistgov/oscal-content/refs/heads/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_HIGH-baseline_profile.json
