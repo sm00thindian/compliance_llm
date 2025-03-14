@@ -36,21 +36,6 @@ severity_colors = {
     'Low': Fore.GREEN
 }
 
-def save_checklist(control_id, steps, stig_recommendations, filename_prefix="checklist"):
-    checklist_dir = "assessment_checklists"
-    os.makedirs(checklist_dir, exist_ok=True)
-    filename = os.path.join(checklist_dir, f"{filename_prefix}_{control_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
-    with open(filename, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["Source", "Step", "Description", "Severity", "Evidence", "Status"])
-        for step in steps:
-            writer.writerow([f"NIST {control_id}", f"Verify {control_id}", step, "N/A", "", "Pending"])
-        for tech, recs in stig_recommendations.items():
-            for matched_control, rec_list in recs.items():
-                for rec in rec_list:
-                    writer.writerow([f"STIG {tech}", rec['rule_id'], rec['fix'], rec.get('severity', 'medium').capitalize(), "", "Pending"])
-    return filename
-
 def get_technology_name(stig):
     title = stig.get('title', 'Untitled')
     tech = stig.get('technology', title)
@@ -58,12 +43,64 @@ def get_technology_name(stig):
         return " ".join(word for word in title.split() if "STIG" not in word and "V" not in word and "R" not in word[:2])
     return tech
 
+def save_checklist(control_id, steps, stig_recommendations, filename_prefix="checklist"):
+    checklist_dir = "assessment_checklists"
+    os.makedirs(checklist_dir, exist_ok=True)
+    filename = os.path.join(checklist_dir, f"{filename_prefix}_{control_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+    with open(filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Source", "Control/Rule", "Action", "Assessment Task", "Severity", "Expected Evidence", "Status"])
+        
+        # NIST steps
+        for i, step in enumerate(steps, 1):
+            task = step.lower().replace("to assess this control, verify ", "").replace("check parameters: none specified", "").strip()
+            if "[assignment:" in task:
+                task = task.replace("[assignment: organization-defined ", "").replace("]", "").replace("[withdrawn: incorporated into ac-6.]", "Withdrawn (see AC-6)")
+                task = f"Verify {task} as defined by your organization."
+            else:
+                task = f"Verify {task.capitalize()}."
+            writer.writerow([
+                "NIST 800-53",
+                control_id,
+                f"Verify Compliance ({i})",
+                task,
+                "N/A",
+                "Access control policy, logs, or config screenshots",
+                "Pending"
+            ])
+        
+        # STIG recommendations
+        for tech, recs in stig_recommendations.items():
+            for matched_control, rec_list in recs.items():
+                for rec in rec_list:
+                    fix_lines = rec['fix'].split('\n')
+                    formatted_fix = []
+                    for line in fix_lines:
+                        line = line.strip()
+                        if line and line[0].isdigit() and line[1] == '.':
+                            formatted_fix.append(f"- {line}")
+                        elif line and formatted_fix:
+                            formatted_fix[-1] += f" {line}"
+                        elif line:
+                            formatted_fix.append(f"- {line}")
+                    task = f"Verify {rec['title']}:\n" + "\n".join(formatted_fix)
+                    writer.writerow([
+                        f"STIG {tech}",
+                        rec['rule_id'],
+                        "Configure and Verify",
+                        task,
+                        rec.get('severity', 'medium').capitalize(),
+                        "Configuration settings, logs, or admin console screenshots",
+                        "Pending"
+                    ])
+    logging.info(f"Generated checklist: {filename}")
+    return filename
+
 def generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, cci_to_nist, generate_checklist=False):
     query_lower = query.lower()
     response = []
 
-    # CCI-specific query handling
-    # 1. Specific CCI lookup (e.g., "What is CCI-000130?")
+    # CCI-specific query handling (unchanged)
     cci_match = re.search(r"(cci-\d+)", query_lower)
     if cci_match:
         cci_id = cci_match.group(1).upper()
@@ -77,7 +114,6 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
             response.append(f"- **Description:** {ctrl['description']}")
         return "\n".join(response)
 
-    # 2. Reverse lookup (e.g., "List CCI mappings for AU-3")
     reverse_match = re.search(r"(?:list|show)?\s*cci\s*mappings\s*for\s*(\w{2}-\d+(?:\s*[a-z])?(?:\([a-z0-9]+\))?)", query_lower)
     if reverse_match:
         control_id = normalize_control_id(reverse_match.group(1).upper())
@@ -94,7 +130,6 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
             response.append(f"- No CCI mappings found for {control_id}.")
         return "\n".join(response)
 
-    # 3. Summary of all mappings (e.g., "Show CCI mappings")
     if "show cci mappings" in query_lower and not reverse_match:
         response.append(f"{Fore.CYAN}CCI-to-NIST Mappings Summary:{Style.RESET_ALL}")
         response.append(f"- Total mappings: {len(cci_to_nist)}")
@@ -106,7 +141,6 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
         response.append(f"{Fore.YELLOW}Note:{Style.RESET_ALL} Subparts (e.g., 'A', '1 (A)') refer to specific NIST 800-53 requirements or enhancements.")
         return "\n".join(response)
 
-    # Control summary logic (e.g., "What is AC-2?")
     control_summary_match = re.search(r"what is\s+(\w{2}-\d+(?:\(\d+\))?)\s*\?", query_lower)
     if control_summary_match:
         control_id = control_summary_match.group(1).upper()
@@ -139,7 +173,6 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
             response.append(f"Control {control_id} not found in the NIST 800-53 Revision 5 catalog.")
         return "\n".join(response)
 
-    # STIG listing logic
     if "list stigs" in query_lower:
         keyword = query_lower.split("for")[1].strip() if "for" in query_lower else None
         filtered_stigs = [
@@ -159,11 +192,10 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
             response.append(f"{Fore.YELLOW}{i}. {tech} (Version {version}){Style.RESET_ALL}")
             response.append(f"   - Title: {title}")
             response.append(f"   - File: {file}")
-            response.append("")  # Blank line for spacing
+            response.append("")
         response.append(f"{Fore.GREEN}Tip:{Style.RESET_ALL} Use 'assess <control>' or 'implement <control>' to see STIG recommendations.")
         return "\n".join(response)
 
-    # Control-specific logic for assessment or implementation
     control_pattern = re.compile(r'\b([A-Z]{2}-[0-9]{1,2}(?:\s*\([a-zA-Z0-9]+\))?)\b')
     control_ids = [match.replace(' ', '') for match in control_pattern.findall(query.upper())]
     system_match = re.search(r'with technology index\s*(\d+)', query_lower)
@@ -182,16 +214,14 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
         response.append("Relevant info: " + "\n".join(retrieved_docs[:5]))
         return "\n".join(response)
 
-    # Extract technology hint from query (e.g., "on VMware")
     tech_hint = None
     tech_match = re.search(r'on\s+([a-zA-Z0-9][a-zA-Z0-9\s\-]*[a-zA-Z0-9])\b', query_lower, re.IGNORECASE)
     if tech_match:
         tech_hint = tech_match.group(1).strip().lower()
         logging.debug(f"Detected tech hint: {tech_hint}")
 
-    # Map technologies to STIGs and find applicable ones
     tech_to_stig = {get_technology_name(stig).lower(): stig for stig in available_stigs}  # Normalize to lowercase for matching
-    all_techs = sorted(set(tech_to_stig.keys()))  # All available technologies
+    all_techs = sorted(set(tech_to_stig.keys()))
     applicable_techs = []
     for tech, stig in tech_to_stig.items():
         for control_id in control_ids:
@@ -203,17 +233,16 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
     unique_techs = sorted(set(applicable_techs))
     logging.debug(f"Applicable technologies before filtering: {unique_techs}")
 
-    # Filter technologies based on hint
     if tech_hint:
-        matching_techs = [t for t in all_techs if tech_hint.lower() in t.lower()]  # Check all techs, not just applicable
+        matching_techs = [t for t in all_techs if tech_hint.lower() in t.lower()]
         if matching_techs:
-            unique_techs = sorted(set(matching_techs) & set(applicable_techs)) or matching_techs  # Prefer applicable, fallback to hint
+            unique_techs = sorted(set(matching_techs) & set(applicable_techs)) or matching_techs
             logging.debug(f"Filtered to technologies matching '{tech_hint}': {unique_techs}")
         else:
             logging.debug(f"No match for '{tech_hint}', using applicable techs")
 
     if not unique_techs and applicable_techs:
-        unique_techs = applicable_techs  # Fallback to applicable if hint filtering fails
+        unique_techs = applicable_techs
         logging.debug(f"Fallback to applicable techs: {unique_techs}")
 
     if selected_idx is None and len(unique_techs) > 1:
@@ -224,23 +253,21 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
             response.append(f"{Fore.YELLOW}{i}. {stig['technology']} (Version {stig['version']}){Style.RESET_ALL}")
             response.append(f"   - Title: {stig['title']}")
         response.append(f"\n{Fore.GREEN}Next Step:{Style.RESET_ALL} Enter a number (1-{len(unique_techs)}, or 0 for all) to proceed.")
-        return "\n".join(response) + "\nCLARIFICATION_NEEDED"  # Signal to main() for prompt
+        return "\n".join(response) + "\nCLARIFICATION_NEEDED"
 
-    # Determine selected technologies
     if selected_idx == 0:
         selected_techs = [tech_to_stig[t]['technology'] for t in unique_techs]
     elif selected_idx is not None and 1 <= selected_idx <= len(unique_techs):
         selected_techs = [tech_to_stig[unique_techs[selected_idx - 1]]['technology']]
     elif len(unique_techs) == 1:
-        selected_techs = [tech_to_stig[unique_techs[0]]['technology']]  # Auto-select if only one match
+        selected_techs = [tech_to_stig[unique_techs[0]]['technology']]
     elif not unique_techs:
-        selected_techs = []  # No applicable STIGs
+        selected_techs = []
     else:
         return "Invalid technology selection."
 
     logging.debug(f"Selected technologies: {selected_techs}")
 
-    # Build response
     action = "Assessing" if is_assessment_query else "Implementing"
     response.append(f"{Fore.CYAN}### {action} {', '.join(control_ids)}{Style.RESET_ALL}")
     response.append(f"Based on NIST 800-53 Rev 5 and available STIGs:\n")
@@ -290,7 +317,10 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
 
             if generate_checklist:
                 steps = assess_docs if 'assess_docs' in locals() else extract_actionable_steps(ctrl['description'])
-                stig_recs_for_checklist = {tech: {control_id: all_stig_recommendations.get(tech, {}).get(control_id, [])} for tech in selected_techs if all_stig_recommendations.get(tech, {}).get(control_id)}
+                stig_recs_for_checklist = {
+                    tech: {control_id: all_stig_recommendations.get(tech, {}).get(control_id, [])}
+                    for tech in selected_techs if all_stig_recommendations.get(tech, {}).get(control_id)
+                }
                 if steps or stig_recs_for_checklist:
                     checklist_file = save_checklist(control_id, steps, stig_recs_for_checklist)
                     response.append(f"   - {Fore.GREEN}Checklist Saved:{Style.RESET_ALL} See `{checklist_file}`")
@@ -321,7 +351,7 @@ def generate_response(query, retrieved_docs, control_details, high_baseline_cont
                         response.append(f"     1. No specific STIG guidance available.")
                         response.append("")
 
-    if len(response) <= 2:  # Only header present
+    if len(response) <= 2:
         response.append(f"{Fore.RED}No specific information found for this query.{Style.RESET_ALL}")
 
     return "\n".join(response)
