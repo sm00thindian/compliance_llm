@@ -134,12 +134,24 @@ def main():
         
         response = generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, cci_to_nist, generate_checklist=generate_checklist)
         
-        if "Multiple STIG technologies available" in response:
-            print(response)
-            selected_idx = input().strip()
-            if selected_idx.isdigit():
-                selected_idx = int(selected_idx)
-                response = generate_response(f"{query} with technology index {selected_idx}", retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, cci_to_nist, generate_checklist=generate_checklist)
+        # Handle clarification prompts
+        if "Multiple STIG technologies available" in response or "CLARIFICATION_NEEDED" in response:
+            clarification_text = response.replace("\nCLARIFICATION_NEEDED", "")
+            print(clarification_text)
+            # Count lines starting with "1.", "2.", etc., to determine the number of options
+            lines = clarification_text.split('\n')
+            num_options = sum(1 for line in lines if line.strip() and line.strip()[0].isdigit() and line.strip()[1] == '.')
+            logging.debug(f"Detected {num_options} technology options in clarification text: {[line.strip() for line in lines if line.strip() and line.strip()[0].isdigit() and line.strip()[1] == '.' ]}")
+            if num_options == 0:  # Fallback if count fails
+                num_options = len([line for line in lines if " - Title:" in line])
+                logging.debug(f"Fallback count: {num_options} based on title lines")
+            while True:
+                tech_choice = input(f"{Fore.YELLOW}Enter a number (1-{num_options}, or 0 for all): {Style.RESET_ALL}").strip()
+                if tech_choice.isdigit() and 0 <= int(tech_choice) <= num_options:
+                    break
+                print(f"Please enter a number between 0 and {num_options}.")
+            query += f" with technology index {tech_choice}"
+            response = generate_response(query, retrieved_docs, control_details, high_baseline_controls, all_stig_recommendations, available_stigs, assessment_procedures, cci_to_nist, generate_checklist=generate_checklist)
         
         if "not found" in response.lower() or "no specific" in response.lower() or len(retrieved_docs) == 0:
             save_unknown_query(query)
